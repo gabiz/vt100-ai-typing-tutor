@@ -171,22 +171,12 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
           )}
         </div>
 
-        {/* Progress indicator */}
-        <div className="mt-4 flex items-center justify-between text-xs text-[#00ff00]/60">
-          <span>
-            Progress: {displayText.completed.length}/{exercise.text.length} characters
-          </span>
-          {typingEngine.isComplete() && (
+        {/* Completion indicator */}
+        {typingEngine.isComplete() && (
+          <div className="mt-4 text-center">
             <span className="text-[#00ff00] font-bold animate-pulse">
               COMPLETE!
             </span>
-          )}
-        </div>
-
-        {/* Instructions */}
-        {!isActive && !typingEngine.isComplete() && (
-          <div className="mt-4 text-center text-sm text-[#00ff00]/60">
-            Click START to begin typing
           </div>
         )}
         
