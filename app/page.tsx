@@ -45,6 +45,7 @@ export default function Home() {
   const [isPaused, setIsPaused] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState<TypingStatus>('READY');
   const [showHistory, setShowHistory] = useState(false);
+  const [hasStartedSession, setHasStartedSession] = useState(false);
   
   // Error and loading states
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +128,7 @@ export default function Home() {
       setIsTypingActive(true);
       setIsPaused(false);
       setTerminalStatus('TYPING');
+      setHasStartedSession(true);
       
       // Reset typing progress
       setTypingProgress({
@@ -154,6 +156,7 @@ export default function Home() {
     setIsTypingActive(false);
     setIsPaused(false);
     setTerminalStatus('READY');
+    setHasStartedSession(false);
     
     setTypingProgress({
       currentPosition: 0,
@@ -416,7 +419,7 @@ export default function Home() {
               charactersTyped={currentMetrics.charactersTyped}
               totalCharacters={currentExercise?.text.length || 0}
               timeElapsed={currentMetrics.timeElapsed}
-              hasActiveSession={currentSession !== null}
+              hasActiveSession={hasStartedSession}
             />
           </div>
         </TerminalInterface>
