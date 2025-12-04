@@ -36,6 +36,11 @@ export class TypingEngine {
    * Start the typing session
    */
   start(): void {
+    // If the session was previously completed, reset it
+    if (this.isComplete()) {
+      this.reset();
+    }
+    
     this.state.isActive = true;
     this.state.startTime = new Date();
     this.state.endTime = null;

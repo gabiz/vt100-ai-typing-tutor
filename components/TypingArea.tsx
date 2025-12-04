@@ -40,6 +40,14 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
   useEffect(() => {
     if (isActive && !typingEngine.isActive()) {
       typingEngine.start();
+      // Update display after starting (which may include a reset)
+      // This setState is necessary to sync UI with engine state after reset
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDisplayText(typingEngine.getDisplayText());
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLastInputWasIncorrect(false);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFlashIncorrect(false);
     } else if (!isActive && typingEngine.isActive()) {
       typingEngine.stop();
     }
