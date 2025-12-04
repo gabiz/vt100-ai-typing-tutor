@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VT100 Typing Tutor
+
+A retro-themed typing tutor web app that brings the classic VT100 terminal aesthetic back to life.
+
+## Features
+
+- Authentic VT100 terminal look and feel
+- Dark theme with classic green phosphor display
+- Terminal-style monospace font (JetBrains Mono)
+- CRT scanline and flicker effects
+- ASCII art VT100 logo
 
 ## Getting Started
 
-First, run the development server:
-
+1. Navigate to the project directory:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd typing-tutor
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies (if not already installed):
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Run the development server:
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-## Learn More
+## UI Elements
 
-To learn more about Next.js, take a look at the following resources:
+- **Terminal Header**: Classic window controls and title bar
+- **VT100 Logo**: ASCII art representation
+- **Terminal Screen**: Main typing area with CRT effects
+- **Stats Display**: WPM, Accuracy, and Error tracking placeholders
+- **Terminal Footer**: Status indicators
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Next Steps
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This is the UI foundation. The typing tutor logic can be added next, including:
+- Text input handling
+- WPM calculation
+- Accuracy tracking
+- Error highlighting
+- Progress tracking
