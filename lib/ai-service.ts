@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { createAnthropic } from '@ai-sdk/anthropic'
 import { 
   TypingExercise, 
   PerformanceHistory, 
@@ -7,7 +7,10 @@ import {
 } from './types'
 
 export class AIServiceImpl {
-  private model = anthropic('claude-3-haiku-20240307')
+  private anthropicClient = createAnthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY
+  })
+  private model = this.anthropicClient('claude-3-haiku-20240307')
 
   async generateExercise(
     prompt: string, 
