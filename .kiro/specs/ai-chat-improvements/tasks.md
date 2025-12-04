@@ -5,13 +5,13 @@
   - Verify API connectivity with the new model endpoint
   - _Requirements: 5.1, 5.2_
 
-- [ ] 2. Create structured response interfaces and types
-  - [ ] 2.1 Define StructuredAIResponse interface
+- [x] 2. Create structured response interfaces and types
+  - [x] 2.1 Define StructuredAIResponse interface
     - Create interface with intent, typing-text, and response fields
     - Add type definitions for intent values (chitchat, session-analysis, session-suggest)
     - _Requirements: 4.2_
 
-  - [ ] 2.2 Define ChatMessage interface for conversation history
+  - [x] 2.2 Define ChatMessage interface for conversation history
     - Create interface with role, content, and timestamp fields
     - Add type definitions for message roles (user, assistant)
     - _Requirements: 8.1_

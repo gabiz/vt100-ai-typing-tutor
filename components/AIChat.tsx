@@ -22,7 +22,7 @@ export const AIChat = forwardRef<
 }, ref) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      role: 'system',
+      role: 'assistant',
       content: 'AI: Ask for an "exercise" or "challenge" to get typing practice text!',
       timestamp: new Date()
     }

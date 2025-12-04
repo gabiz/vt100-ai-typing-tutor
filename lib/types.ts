@@ -81,11 +81,24 @@ export interface AIChatProps {
   };
 }
 
+/**
+ * Chat message interface for conversation history management
+ * Implements requirements 8.1 for conversation context tracking
+ */
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  /** Message role - either user or AI assistant */
+  role: 'user' | 'assistant';
+  /** Message content text */
   content: string;
+  /** Timestamp when the message was created */
   timestamp: Date;
 }
+
+/**
+ * Type definition for chat message roles
+ * Used to ensure type safety in conversation handling
+ */
+export type ChatRole = 'user' | 'assistant';
 
 export interface TypingAreaProps {
   exercise: TypingExercise;
@@ -117,6 +130,29 @@ export interface SessionControlsProps {
   isActive: boolean;
   isPaused: boolean;
 }
+
+// ============================================================================
+// AI Chat Enhancement Types
+// ============================================================================
+
+/**
+ * Structured response format for enhanced AI chat functionality
+ * Implements requirements 4.2 for consistent JSON response structure
+ */
+export interface StructuredAIResponse {
+  /** Intent classification for the user's message */
+  intent: 'chitchat' | 'session-analysis' | 'session-suggest';
+  /** Generated typing exercise text (null for chitchat and session-analysis) */
+  'typing-text': string | null;
+  /** AI response message to display to the user */
+  response: string;
+}
+
+/**
+ * Type definition for AI intent classification values
+ * Used to ensure type safety in intent handling
+ */
+export type AIIntent = 'chitchat' | 'session-analysis' | 'session-suggest';
 
 // ============================================================================
 // Service Interfaces
@@ -183,7 +219,6 @@ export type TypingStatus = 'READY' | 'AI THINKING' | 'TYPING' | 'PAUSED';
 export type DifficultyLevel = 'beginner' | 'intermediate' | 'advanced';
 export type ImprovementTrend = 'improving' | 'stable' | 'declining';
 export type GenerationSource = 'ai' | 'preset';
-export type ChatRole = 'user' | 'assistant' | 'system';
 
 // ============================================================================
 // Error Types
@@ -234,7 +269,11 @@ export function isValidTypingStatus(value: string): value is TypingStatus {
 }
 
 export function isValidChatRole(value: string): value is ChatRole {
-  return ['user', 'assistant', 'system'].includes(value);
+  return ['user', 'assistant'].includes(value);
+}
+
+export function isValidAIIntent(value: string): value is AIIntent {
+  return ['chitchat', 'session-analysis', 'session-suggest'].includes(value);
 }
 
 export function isValidSessionData(data: unknown): data is SessionData {
