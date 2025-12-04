@@ -152,20 +152,20 @@
   - **Property 11: Time tracking accuracy**
   - **Validates: Requirements 4.4**
 
-- [-] 11. Integrate all components in main page
+- [x] 11. Integrate all components in main page
   - [x] 11.1 Update app/page.tsx with functional components
     - Replace static mockup with interactive components
     - Wire up state management between components
     - Implement proper data flow and event handling
     - _Requirements: All requirements_
 
-  - [-] 11.2 Add error handling and loading states
+  - [x] 11.2 Add error handling and loading states
     - Implement graceful error handling for AI service failures
     - Add loading indicators for AI processing
     - Handle edge cases and invalid inputs
     - _Requirements: 1.2, Error Handling section_
 
-- [ ] 12. Final checkpoint - Complete testing and validation
+- [-] 12. Final checkpoint - Complete testing and validation
   - Ensure all tests pass, ask the user if questions arise.
   - Verify npm run build and npm run lint pass successfully
   - Test complete user workflow from AI chat to typing exercise completion
