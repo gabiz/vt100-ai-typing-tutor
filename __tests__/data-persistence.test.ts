@@ -6,13 +6,6 @@
 import fc from 'fast-check';
 import { StorageServiceImpl } from '../lib/storage-service';
 import { SessionData } from '../lib/types';
-import { it } from 'zod/v4/locales';
-import { it } from 'zod/v4/locales';
-import { it } from 'zod/v4/locales';
-import { it } from 'zod/v4/locales';
-import { afterEach } from 'node:test';
-import { beforeEach } from 'node:test';
-import { describe } from 'yargs';
 
 // Mock localStorage for testing
 const localStorageMock = (() => {
@@ -61,11 +54,14 @@ describe('Data Persistence Round Trip Property Tests', () => {
     )
   });
 
+  const validDateArb = fc.date({ min: new Date('2020-01-01'), max: new Date('2030-12-31') })
+    .filter(date => !isNaN(date.getTime()));
+
   const sessionDataArb = fc.record({
     id: fc.uuid(),
     exerciseId: fc.uuid(),
-    startTime: fc.date(),
-    endTime: fc.option(fc.date()),
+    startTime: validDateArb,
+    endTime: fc.option(validDateArb),
     metrics: performanceMetricsArb,
     completed: fc.boolean()
   });

@@ -193,8 +193,9 @@ export class StorageServiceImpl {
       }
 
       // Validate metrics structure
-      const metrics = session.metrics;
+      const metrics = session.metrics as Record<string, unknown>;
       if (
+        !metrics ||
         typeof metrics.wpm !== 'number' ||
         typeof metrics.accuracy !== 'number' ||
         typeof metrics.errorCount !== 'number' ||
@@ -208,15 +209,15 @@ export class StorageServiceImpl {
       return {
         id: session.id,
         exerciseId: session.exerciseId,
-        startTime: new Date(session.startTime),
-        endTime: session.endTime ? new Date(session.endTime) : undefined,
+        startTime: new Date(session.startTime as string | number | Date),
+        endTime: session.endTime ? new Date(session.endTime as string | number | Date) : undefined,
         metrics: {
-          wpm: metrics.wpm,
-          accuracy: metrics.accuracy,
-          errorCount: metrics.errorCount,
-          charactersTyped: metrics.charactersTyped,
-          timeElapsed: metrics.timeElapsed,
-          keyErrorMap: metrics.keyErrorMap
+          wpm: metrics.wpm as number,
+          accuracy: metrics.accuracy as number,
+          errorCount: metrics.errorCount as number,
+          charactersTyped: metrics.charactersTyped as number,
+          timeElapsed: metrics.timeElapsed as number,
+          keyErrorMap: metrics.keyErrorMap as Record<string, number>
         },
         completed: session.completed
       };
