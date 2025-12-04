@@ -27,8 +27,8 @@
     - Test data validation and error handling
     - _Requirements: 5.1, 5.2_
 
-- [ ] 4. Build typing engine core functionality
-  - [ ] 4.1 Implement TypingEngine class with cursor management
+- [-] 4. Build typing engine core functionality
+  - [x] 4.1 Implement TypingEngine class with cursor management
     - Create character-by-character input processing
     - Implement cursor advancement logic for correct/incorrect input
     - Add real-time performance metrics calculation
