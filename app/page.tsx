@@ -408,15 +408,17 @@ export default function Home() {
               isPaused={isPaused}
             />
 
-            {/* Stats Dashboard */}
-            <StatsDisplay 
-              wpm={currentMetrics.wpm}
-              accuracy={currentMetrics.accuracy}
-              errors={currentMetrics.errorCount}
-              charactersTyped={currentMetrics.charactersTyped}
-              totalCharacters={currentExercise?.text.length || 0}
-              timeElapsed={currentMetrics.timeElapsed}
-            />
+            {/* Stats Dashboard - Only show when session is active or has been started */}
+            {currentSession && (
+              <StatsDisplay 
+                wpm={currentMetrics.wpm}
+                accuracy={currentMetrics.accuracy}
+                errors={currentMetrics.errorCount}
+                charactersTyped={currentMetrics.charactersTyped}
+                totalCharacters={currentExercise?.text.length || 0}
+                timeElapsed={currentMetrics.timeElapsed}
+              />
+            )}
           </div>
         </TerminalInterface>
 
