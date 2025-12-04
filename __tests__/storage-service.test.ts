@@ -218,6 +218,10 @@ describe('StorageService Unit Tests', () => {
     });
 
     it('should handle corrupted settings gracefully', () => {
+      // Suppress expected console.warn for this test
+      const originalWarn = console.warn;
+      console.warn = jest.fn();
+
       localStorageMock._setStore({
         'typing-tutor-settings': 'invalid-json'
       });
@@ -230,6 +234,15 @@ describe('StorageService Unit Tests', () => {
         theme: 'green',
         difficulty: 'beginner'
       });
+
+      // Verify that the warning was called
+      expect(console.warn).toHaveBeenCalledWith(
+        'Failed to load settings, using defaults:',
+        expect.any(SyntaxError)
+      );
+
+      // Restore original console.warn
+      console.warn = originalWarn;
     });
   });
 
@@ -272,6 +285,10 @@ describe('StorageService Unit Tests', () => {
     });
 
     it('should handle corrupted session data gracefully', () => {
+      // Suppress expected console.warn for this test
+      const originalWarn = console.warn;
+      console.warn = jest.fn();
+
       localStorageMock._setStore({
         'typing-tutor-sessions': 'invalid-json'
       });
@@ -280,6 +297,15 @@ describe('StorageService Unit Tests', () => {
 
       expect(history.sessions).toHaveLength(0);
       expect(history.totalSessions).toBe(0);
+
+      // Verify that the warning was called
+      expect(console.warn).toHaveBeenCalledWith(
+        'Failed to parse session data, resetting:',
+        expect.any(SyntaxError)
+      );
+
+      // Restore original console.warn
+      console.warn = originalWarn;
     });
 
     it('should filter out invalid session objects', () => {
