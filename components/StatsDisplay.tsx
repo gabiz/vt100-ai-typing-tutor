@@ -15,7 +15,8 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
   errors,
   charactersTyped,
   totalCharacters,
-  timeElapsed
+  timeElapsed,
+  hasActiveSession = false
 }) => {
   /**
    * Format time elapsed into MM:SS format
@@ -87,8 +88,8 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
         <div className="text-[#00ff00]/60 mb-2 text-xs uppercase tracking-wide">
           WPM
         </div>
-        <div className={`text-2xl font-bold font-mono ${getWPMColor()}`}>
-          {formatWPM(wpm)}
+        <div className={`text-2xl font-bold font-mono ${hasActiveSession ? getWPMColor() : 'text-[#00ff00]/40'}`}>
+          {hasActiveSession ? formatWPM(wpm) : '--'}
         </div>
         <div className="text-[#00ff00]/40 text-xs mt-1">
           Words/Min
@@ -100,8 +101,8 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
         <div className="text-[#00ff00]/60 mb-2 text-xs uppercase tracking-wide">
           Accuracy
         </div>
-        <div className={`text-2xl font-bold font-mono ${getAccuracyColor()}`}>
-          {formatAccuracy(accuracy)}
+        <div className={`text-2xl font-bold font-mono ${hasActiveSession ? getAccuracyColor() : 'text-[#00ff00]/40'}`}>
+          {hasActiveSession ? formatAccuracy(accuracy) : '--'}
         </div>
         <div className="text-[#00ff00]/40 text-xs mt-1">
           Correct Rate
@@ -113,8 +114,8 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
         <div className="text-[#00ff00]/60 mb-2 text-xs uppercase tracking-wide">
           Errors
         </div>
-        <div className={`text-2xl font-bold font-mono ${getErrorColor()}`}>
-          {errors}
+        <div className={`text-2xl font-bold font-mono ${hasActiveSession ? getErrorColor() : 'text-[#00ff00]/40'}`}>
+          {hasActiveSession ? errors : '--'}
         </div>
         <div className="text-[#00ff00]/40 text-xs mt-1">
           Mistakes
@@ -126,8 +127,8 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
         <div className="text-[#00ff00]/60 mb-2 text-xs uppercase tracking-wide">
           Chars
         </div>
-        <div className="text-2xl font-bold font-mono text-[#00ff00]">
-          {formatCharacters(charactersTyped, totalCharacters)}
+        <div className={`text-2xl font-bold font-mono ${hasActiveSession ? 'text-[#00ff00]' : 'text-[#00ff00]/40'}`}>
+          {hasActiveSession ? formatCharacters(charactersTyped, totalCharacters) : '--'}
         </div>
         <div className="text-[#00ff00]/40 text-xs mt-1">
           Progress
@@ -140,8 +141,8 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
           <div className="text-[#00ff00]/60 mb-1 text-xs uppercase tracking-wide">
             Time Elapsed
           </div>
-          <div className="text-xl font-bold font-mono text-[#00ff00]">
-            {formatTime(timeElapsed)}
+          <div className={`text-xl font-bold font-mono ${hasActiveSession ? 'text-[#00ff00]' : 'text-[#00ff00]/40'}`}>
+            {hasActiveSession ? formatTime(timeElapsed) : '--:--'}
           </div>
         </div>
       </div>

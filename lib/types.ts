@@ -95,6 +95,7 @@ export interface StatsDisplayProps {
   charactersTyped: number;
   totalCharacters: number;
   timeElapsed: number;
+  hasActiveSession?: boolean;
 }
 
 export interface SessionControlsProps {
