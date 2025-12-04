@@ -9,6 +9,7 @@ export { default as TypingArea } from './TypingArea';
 export { default as StatsDisplay } from './StatsDisplay';
 export { default as SessionControls } from './SessionControls';
 export { default as SessionHistory } from './SessionHistory';
+export { default as Modal } from './Modal';
 
 // Re-export types for convenience
 export type {

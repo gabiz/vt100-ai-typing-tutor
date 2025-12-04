@@ -16,6 +16,13 @@ export interface TypingExercise {
   createdAt: Date;
 }
 
+export interface TypingError {
+  position: number;
+  expected: string;
+  typed: string;
+  timestamp: number;
+}
+
 export interface PerformanceMetrics {
   wpm: number;
   accuracy: number;
@@ -23,6 +30,7 @@ export interface PerformanceMetrics {
   charactersTyped: number;
   timeElapsed: number;
   keyErrorMap: Record<string, number>;
+  detailedErrors?: TypingError[];
 }
 
 export interface SessionData {
@@ -67,6 +75,10 @@ export interface AIChatProps {
   performanceData: PerformanceHistory;
   onError?: (errorMessage: string) => void;
   onThinkingChange?: (isThinking: boolean) => void;
+  lastSessionErrors?: {
+    keyErrorMap: Record<string, number>;
+    detailedErrors: TypingError[];
+  };
 }
 
 export interface ChatMessage {
@@ -94,7 +106,6 @@ export interface StatsDisplayProps {
   errors: number;
   charactersTyped: number;
   totalCharacters: number;
-  timeElapsed: number;
   hasActiveSession?: boolean;
 }
 
@@ -102,7 +113,7 @@ export interface SessionControlsProps {
   onStart: () => void;
   onStop: () => void;
   onReset: () => void;
-  onNewText: () => void;
+  onNewText?: () => void;
   isActive: boolean;
   isPaused: boolean;
 }

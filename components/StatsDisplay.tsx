@@ -15,17 +15,9 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
   errors,
   charactersTyped,
   totalCharacters,
-  timeElapsed,
   hasActiveSession = false
 }) => {
-  /**
-   * Format time elapsed into MM:SS format
-   */
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+
 
   /**
    * Format accuracy to one decimal place
@@ -135,17 +127,7 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
         </div>
       </div>
 
-      {/* Time Display - Requirement 4.4 (spans across bottom) */}
-      <div className="col-span-4 border border-[#00ff00]/30 p-3 rounded flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-[#00ff00]/60 mb-1 text-xs uppercase tracking-wide">
-            Time Elapsed
-          </div>
-          <div className={`text-xl font-bold font-mono ${hasActiveSession ? 'text-[#00ff00]' : 'text-[#00ff00]/40'}`}>
-            {hasActiveSession ? formatTime(timeElapsed) : '--:--'}
-          </div>
-        </div>
-      </div>
+
     </div>
   );
 };

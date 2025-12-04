@@ -18,23 +18,46 @@ export class AIServiceImpl {
     focusKeys?: string[]
   ): Promise<TypingExercise> {
     try {
-      const systemPrompt = `You are a typing tutor AI. Generate typing exercises that help users improve their typing skills. 
+      // Check if this is a drill request for key practice
+      const isDrillRequest = /(?:drill|practice.*keys?|key.*drill|finger.*exercise)/i.test(prompt);
       
-      Rules:
-      - Only respond with typing exercise content
-      - Keep responses focused on typing practice
-      - Generate text appropriate for the specified difficulty level
-      - If focusKeys are provided, include more of those characters
-      - Reject off-topic requests politely and redirect to typing practice
+      if (isDrillRequest && focusKeys && focusKeys.length > 0) {
+        // Generate a key-focused drill instead of word-based text
+        return this.generateKeyDrill(focusKeys, difficulty);
+      }
+      
+      // Extract requested word count from prompt (default to 40)
+      const requestedWordCount = this.extractWordCount(prompt);
+      const targetWords = requestedWordCount || 40;
+
+      const systemPrompt = `You are a typing exercise generator. Generate ONLY the text content that users should type for practice.
+
+      CRITICAL RULES - FOLLOW EXACTLY OR FAIL:
+      - Respond with ONLY the typing exercise text, no explanations or instructions
+      - Do NOT include phrases like "Here's your exercise" or "Practice typing this"
+      - WORD COUNT IS ABSOLUTELY CRITICAL: Generate EXACTLY ${targetWords} words, no more, no less
+      - Count every single word as you write - this is MANDATORY and NON-NEGOTIABLE
+      - If user requests specific word count, follow it PRECISELY - this is the most important rule
+      - Default is 40 words if no specific count requested
+      - STOP writing IMMEDIATELY when you reach exactly ${targetWords} words
+      - Do NOT write ${targetWords + 1} words or ${targetWords - 1} words - EXACTLY ${targetWords}
+      - ONLY use standard keyboard characters: letters (a-z, A-Z), numbers (0-9), and basic punctuation
+      - NEVER use special symbols like °, ©, ®, €, £, ™, or any Unicode characters
+      - Allowed punctuation: . , ! ? ; : " ' - ( ) / @ # $ % & *
+      - Make the content appropriate for the difficulty level
+      - If focusKeys are specified, use those letters HEAVILY - at least 50% of the text should contain focus keys
+      - When focus keys are provided, create words and sentences that specifically practice those letters
+      
+      REMINDER: The user has requested EXACTLY ${targetWords} words. This is not a suggestion - it is a requirement.
       
       Difficulty levels:
-      - beginner: Simple words, common letters
-      - intermediate: Mixed case, punctuation, longer sentences  
-      - advanced: Complex text, special characters, technical content`
+      - beginner: Simple words, basic punctuation (. , ! ?), EXACTLY ~${targetWords} words
+      - intermediate: Mixed case, common punctuation (; : " ' -), EXACTLY ~${targetWords} words  
+      - advanced: Complex vocabulary, keyboard symbols (@ # $ % & *), technical terms, EXACTLY ~${targetWords} words`
 
       const userPrompt = focusKeys 
-        ? `${prompt}. Focus on these keys: ${focusKeys.join(', ')}. Difficulty: ${difficulty}`
-        : `${prompt}. Difficulty: ${difficulty}`
+        ? `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. FOCUS KEYS: ${focusKeys.join(', ')} - use these letters HEAVILY throughout the text. Create ${difficulty} typing text with many words containing ${focusKeys.join(', ')}. Examples: ${focusKeys.includes('e') ? 'exercise, element, energy' : ''} ${focusKeys.includes('n') ? 'nature, number, engine' : ''}. Theme: ${prompt}. CRITICAL: EXACTLY ${targetWords} words and HEAVY use of focus keys.`
+        : `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. Count: 1, 2, 3... up to ${targetWords} then STOP. Create ${difficulty} level typing text. Theme: ${prompt}. REQUIREMENT: EXACTLY ${targetWords} words - not ${targetWords - 1}, not ${targetWords + 1}, but EXACTLY ${targetWords}.`
 
       const { text } = await generateText({
         model: this.model,
@@ -45,6 +68,26 @@ export class AIServiceImpl {
       // Validate that the response is appropriate for typing practice
       if (this.isOffTopic(text)) {
         throw new Error('Generated content is not suitable for typing practice')
+      }
+
+      // Validate that only standard keyboard characters are used
+      if (this.hasInvalidCharacters(text)) {
+        console.warn('Generated text contains invalid characters, using fallback');
+        return this.getFallbackExercise(difficulty, focusKeys);
+      }
+
+      // Validate word count (should be exact or very close)
+      const wordCount = text.trim().split(/\s+/).length;
+      const minWords = Math.max(5, targetWords - 3);
+      const maxWords = targetWords + 3;
+      
+      if (wordCount < minWords || wordCount > maxWords) {
+        console.warn(`Generated text has ${wordCount} words, expected exactly ${targetWords} words`);
+        // For significant deviations, use fallback
+        if (wordCount < targetWords - 10 || wordCount > targetWords + 10) {
+          console.warn('Word count too far off, using fallback exercise');
+          return this.getFallbackExercise(difficulty, focusKeys);
+        }
       }
 
       return {
@@ -93,24 +136,64 @@ export class AIServiceImpl {
     }
   }
 
-  async chatWithUser(message: string, context: PerformanceHistory): Promise<string> {
+  async chatWithUser(
+    message: string, 
+    context: PerformanceHistory,
+    lastSessionErrors?: {
+      keyErrorMap: Record<string, number>;
+      detailedErrors: Array<{
+        position: number;
+        expected: string;
+        typed: string;
+        timestamp: number;
+      }>;
+    }
+  ): Promise<string> {
     try {
       // Check if the message is typing-related
       if (!this.isTypingRelated(message)) {
         return "I'm here to help you improve your typing skills! Try asking for a typing exercise, practice suggestions, or performance analysis."
       }
 
-      const systemPrompt = `You are a helpful typing tutor AI assistant. Help users improve their typing skills through:
-      - Generating typing exercises
-      - Providing typing tips and techniques
-      - Analyzing performance data
-      - Encouraging practice
-      
-      Stay focused on typing-related topics only.`
+      const systemPrompt = `You are a concise typing tutor AI. Provide brief, helpful responses about typing improvement.
 
-      const contextInfo = context.totalSessions > 0 
+      Rules:
+      - Keep responses under 50 words
+      - Focus on actionable typing advice
+      - Encourage users to request specific exercises
+      - If they want practice text, tell them to ask for an "exercise" or "challenge"`
+
+      let contextInfo = context.totalSessions > 0 
         ? `User context: ${context.totalSessions} sessions completed, ${context.averageWPM} WPM average, ${context.averageAccuracy}% accuracy`
-        : 'New user with no typing history'
+        : 'New user with no typing history';
+
+      // Add last session error information if available
+      if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
+        const problemKeys = Object.entries(lastSessionErrors.keyErrorMap)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 5)
+          .map(([key, count]) => `${key} (${count} errors)`);
+        
+        contextInfo += `\nLast session problematic keys: ${problemKeys.join(', ')}`;
+        
+        if (lastSessionErrors.detailedErrors.length > 0) {
+          const commonMistakes = lastSessionErrors.detailedErrors
+            .reduce((acc, error) => {
+              const mistake = `'${error.expected}' → '${error.typed}'`;
+              acc[mistake] = (acc[mistake] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>);
+
+          const topMistakes = Object.entries(commonMistakes)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 3)
+            .map(([mistake, count]) => `${mistake} (${count}x)`);
+
+          if (topMistakes.length > 0) {
+            contextInfo += `\nCommon typing mistakes: ${topMistakes.join(', ')}`;
+          }
+        }
+      }
 
       const { text } = await generateText({
         model: this.model,
@@ -145,19 +228,229 @@ export class AIServiceImpl {
     ) || message.length < 50 // Allow short messages
   }
 
+  private extractWordCount(prompt: string): number | null {
+    // Look for patterns like "20 words", "30-word", "short exercise", etc.
+    const wordCountMatch = prompt.match(/(\d+)\s*(?:words?|word)/i);
+    if (wordCountMatch) {
+      const count = parseInt(wordCountMatch[1]);
+      // Reasonable limits: 5-200 words
+      if (count >= 5 && count <= 200) {
+        return count;
+      }
+    }
+
+    // Look for qualitative length requests
+    if (/short|quick|brief|small/i.test(prompt)) {
+      return 30; // Short exercise
+    }
+    if (/long|extended|lengthy/i.test(prompt)) {
+      return 90; // Long exercise
+    }
+
+    return null; // Use default (60 words)
+  }
+
+  private generateKeyDrill(focusKeys: string[], difficulty: string): TypingExercise {
+    const keys = focusKeys.slice(0, 5); // Limit to 5 keys max
+    let drillText = '';
+    
+    // Generate different drill patterns based on difficulty
+    switch (difficulty) {
+      case 'beginner':
+        // Simple key repetition and basic combinations
+        drillText = this.generateBeginnerKeyDrill(keys);
+        break;
+      case 'advanced':
+        // Complex patterns and combinations
+        drillText = this.generateAdvancedKeyDrill(keys);
+        break;
+      default: // intermediate
+        // Moderate patterns with some combinations
+        drillText = this.generateIntermediateKeyDrill(keys);
+    }
+    
+    return {
+      id: crypto.randomUUID(),
+      text: drillText,
+      difficulty: difficulty as DifficultyLevel,
+      focusKeys: keys,
+      generatedBy: 'ai',
+      createdAt: new Date()
+    };
+  }
+
+  private generateBeginnerKeyDrill(keys: string[]): string {
+    const patterns = [];
+    
+    // Individual key repetition
+    keys.forEach(key => {
+      patterns.push(`${key} ${key} ${key} ${key} ${key}`);
+    });
+    
+    // Simple alternating patterns
+    if (keys.length >= 2) {
+      patterns.push(`${keys[0]} ${keys[1]} ${keys[0]} ${keys[1]} ${keys[0]} ${keys[1]}`);
+    }
+    
+    // Basic combinations
+    keys.forEach(key => {
+      patterns.push(`${key}a ${key}e ${key}i ${key}o ${key}u`);
+    });
+    
+    return patterns.join(' ').substring(0, 200); // Keep it reasonable length
+  }
+
+  private generateIntermediateKeyDrill(keys: string[]): string {
+    const patterns = [];
+    
+    // Key combinations with common letters
+    const commonLetters = ['a', 'e', 'i', 'o', 'u', 't', 'h', 's', 'r'];
+    
+    keys.forEach(key => {
+      // Create patterns like "en ne en ne" for key 'n'
+      commonLetters.slice(0, 3).forEach(letter => {
+        patterns.push(`${key}${letter} ${letter}${key} ${key}${letter} ${letter}${key}`);
+      });
+    });
+    
+    // Multi-key combinations
+    if (keys.length >= 2) {
+      for (let i = 0; i < keys.length - 1; i++) {
+        patterns.push(`${keys[i]}${keys[i+1]} ${keys[i+1]}${keys[i]} ${keys[i]}${keys[i+1]}`);
+      }
+    }
+    
+    return patterns.join(' ').substring(0, 200);
+  }
+
+  private generateAdvancedKeyDrill(keys: string[]): string {
+    const patterns = [];
+    
+    // Complex finger patterns and sequences
+    keys.forEach(key => {
+      // Rapid alternation patterns
+      patterns.push(`${key}${key}${key} ${key}a${key} ${key}e${key} ${key}i${key}`);
+      
+      // Mixed case if advanced
+      patterns.push(`${key}${key.toUpperCase()}${key} ${key.toUpperCase()}${key}${key.toUpperCase()}`);
+    });
+    
+    // Complex multi-key sequences
+    if (keys.length >= 3) {
+      const seq1 = `${keys[0]}${keys[1]}${keys[2]}`;
+      const seq2 = `${keys[2]}${keys[1]}${keys[0]}`;
+      patterns.push(`${seq1} ${seq2} ${seq1} ${seq2}`);
+    }
+    
+    // Challenging combinations with punctuation
+    keys.forEach(key => {
+      patterns.push(`${key}, ${key}. ${key}; ${key}:`);
+    });
+    
+    return patterns.join(' ').substring(0, 200);
+  }
+
+  private hasInvalidCharacters(text: string): boolean {
+    // Define allowed characters: letters, numbers, spaces, and basic punctuation
+    const allowedChars = /^[a-zA-Z0-9\s.,!?;:'"()\-\/@#$%&*\n\r]+$/;
+    return !allowedChars.test(text);
+  }
+
+  async analyzeSession(sessionData: {
+    wpm: number;
+    accuracy: number;
+    errorCount: number;
+    timeElapsed: number;
+    keyErrorMap: Record<string, number>;
+    detailedErrors?: Array<{
+      position: number;
+      expected: string;
+      typed: string;
+      timestamp: number;
+    }>;
+    exerciseText?: string;
+  }): Promise<string> {
+    try {
+      const systemPrompt = `You are a typing performance analyst. Provide a concise but insightful session summary in 2-3 sentences.
+
+      CRITICAL: Use the EXACT error data provided - do not give generic responses.
+      
+      Focus on:
+      - Overall performance (WPM and accuracy)
+      - SPECIFIC keys that caused errors (use the "Most problematic keys" and "Common mistakes" data)
+      - Mention the exact keys the user struggled with by name
+      - Actionable improvement suggestions based on actual errors
+      - Offer to generate targeted practice exercises for the problematic keys`
+
+      const errorKeys = Object.entries(sessionData.keyErrorMap)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3)
+        .map(([key]) => key);
+
+      // Analyze detailed errors for patterns
+      let errorAnalysis = '';
+      if (sessionData.detailedErrors && sessionData.detailedErrors.length > 0) {
+        const commonMistakes = sessionData.detailedErrors
+          .reduce((acc, error) => {
+            const mistake = `'${error.expected}' → '${error.typed}'`;
+            acc[mistake] = (acc[mistake] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+
+        const topMistakes = Object.entries(commonMistakes)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 3)
+          .map(([mistake, count]) => `${mistake} (${count}x)`);
+
+        errorAnalysis = topMistakes.length > 0 ? 
+          `\n- Common mistakes: ${topMistakes.join(', ')}` : '';
+      }
+
+      // Format error information more prominently
+      let errorSummary = '';
+      if (errorKeys.length > 0) {
+        errorSummary = `\nERROR ANALYSIS (USE THIS DATA):
+- Problematic keys: ${errorKeys.join(', ')}
+- These keys caused ${errorKeys.map(key => sessionData.keyErrorMap[key]).reduce((a, b) => a + b, 0)} errors total${errorAnalysis}`;
+      } else {
+        errorSummary = '\nNo specific problematic keys identified - excellent accuracy!';
+      }
+
+      const sessionInfo = `
+      Session Performance:
+      - WPM: ${sessionData.wpm}
+      - Accuracy: ${sessionData.accuracy.toFixed(1)}%
+      - Total Errors: ${sessionData.errorCount}
+      - Time: ${sessionData.timeElapsed}s${errorSummary}
+      
+      IMPORTANT: Reference the specific problematic keys by name in your response.`
+
+      const { text } = await generateText({
+        model: this.model,
+        system: systemPrompt,
+        prompt: `Analyze this typing session: ${sessionInfo}`,
+      })
+
+      return text.trim()
+    } catch (error) {
+      console.error('Session analysis failed:', error)
+      return `Session complete! ${sessionData.wpm} WPM at ${sessionData.accuracy.toFixed(1)}% accuracy. ${sessionData.errorCount > 5 ? 'Focus on accuracy in your next session.' : 'Great job! Keep practicing to improve speed.'}`
+    }
+  }
+
   private getFallbackExercise(difficulty: string, focusKeys?: string[]): TypingExercise {
     const exercises = {
-      beginner: 'The quick brown fox jumps over the lazy dog.',
-      intermediate: 'Practice makes perfect! Keep typing to improve your speed and accuracy.',
-      advanced: 'Advanced typing requires precision, speed, and consistent practice across various text types.'
+      beginner: 'The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet. Practice typing slowly and focus on accuracy first. Speed will come naturally with practice. Keep your fingers on the home row keys.',
+      intermediate: 'Practice makes perfect! Keep typing to improve your speed and accuracy. Remember to maintain proper finger positioning on the home row keys. Take breaks when needed, but try to maintain a steady rhythm throughout your typing session.',
+      advanced: 'Advanced typing requires precision, speed, and consistent practice across various text types. Master complex punctuation, keyboard symbols like @#$%&*, and technical terminology. Develop muscle memory through deliberate practice while maintaining exceptional accuracy standards.'
     }
 
     let text = exercises[difficulty as keyof typeof exercises] || exercises.beginner
 
-    // If focus keys are specified, create a simple exercise with those keys
+    // If focus keys are specified, create a longer exercise with those keys
     if (focusKeys && focusKeys.length > 0) {
       const keyString = focusKeys.join(' ')
-      text = `Practice these keys: ${keyString}. ${keyString.repeat(3)}`
+      text = `Practice these specific keys: ${keyString}. Focus on building muscle memory for ${keyString} combinations. Repeat these patterns: ${keyString.repeat(2)}. Remember to keep your fingers positioned correctly and maintain steady rhythm while typing ${keyString} sequences.`
     }
 
     return {

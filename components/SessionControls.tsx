@@ -7,14 +7,13 @@ import React from 'react';
 import { SessionControlsProps } from '@/lib/types';
 
 /**
- * Session controls component that provides START, STOP, RESET, and NEW TEXT buttons
+ * Session controls component that provides START, STOP, and RESET buttons
  * with proper state management for session control
  */
 export const SessionControls: React.FC<SessionControlsProps> = ({
   onStart,
   onStop,
   onReset,
-  onNewText,
   isActive,
   isPaused
 }) => {
@@ -60,12 +59,7 @@ export const SessionControls: React.FC<SessionControlsProps> = ({
     onReset();
   };
 
-  /**
-   * Handle new text button click - Requirement 3.4
-   */
-  const handleNewText = (): void => {
-    onNewText();
-  };
+
 
   /**
    * Determine button states and labels
@@ -96,18 +90,9 @@ export const SessionControls: React.FC<SessionControlsProps> = ({
     };
   };
 
-  const getNewTextButtonState = () => {
-    return { 
-      enabled: !isActive, 
-      label: 'NEW TEXT', 
-      isPrimary: false 
-    };
-  };
-
   const startButton = getStartButtonState();
   const stopButton = getStopButtonState();
   const resetButton = getResetButtonState();
-  const newTextButton = getNewTextButtonState();
 
   return (
     <div className="flex gap-4 justify-center items-center">
@@ -151,19 +136,7 @@ export const SessionControls: React.FC<SessionControlsProps> = ({
         {resetButton.label}
       </button>
 
-      {/* New Text Button - Requirement 3.4 */}
-      <button
-        onClick={handleNewText}
-        disabled={!newTextButton.enabled}
-        className={getButtonClass(newTextButton.enabled, newTextButton.isPrimary)}
-        title={
-          isActive 
-            ? "Stop the current session to request new text" 
-            : "Request a new typing exercise from AI"
-        }
-      >
-        {newTextButton.label}
-      </button>
+
 
       {/* Status Indicator */}
       <div className="ml-4 flex items-center gap-2 text-xs text-[#00ff00]/60">

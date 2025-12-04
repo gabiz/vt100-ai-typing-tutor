@@ -3,24 +3,27 @@
  * Implements requirements 1.1, 1.2, 1.3, 1.4, 1.5
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { AIChatProps, ChatMessage } from '@/lib/types';
-import { AIServiceImpl } from '@/lib/ai-service';
 
 /**
  * AI Chat component that provides conversational interface for exercise generation
  * and performance analysis
  */
-export const AIChat: React.FC<AIChatProps> = ({
+export const AIChat = forwardRef<
+  { addMessage: (content: string) => void },
+  AIChatProps
+>(({
   onExerciseGenerated,
   performanceData,
   onError,
-  onThinkingChange
-}) => {
+  onThinkingChange,
+  lastSessionErrors
+}, ref) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'system',
-      content: 'AI: What would you like to practice today?',
+      content: 'AI: Ask for an "exercise" or "challenge" to get typing practice text!',
       timestamp: new Date()
     }
   ]);
@@ -28,7 +31,6 @@ export const AIChat: React.FC<AIChatProps> = ({
   const [isThinking, setIsThinking] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const aiService = new AIServiceImpl();
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -39,6 +41,18 @@ export const AIChat: React.FC<AIChatProps> = ({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Expose addMessage method to parent component
+  useImperativeHandle(ref, () => ({
+    addMessage: (content: string) => {
+      const aiMessage: ChatMessage = {
+        role: 'assistant',
+        content,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, aiMessage]);
+    }
+  }), []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,20 +75,37 @@ export const AIChat: React.FC<AIChatProps> = ({
 
     try {
       // Check if user is requesting an exercise
-      const isExerciseRequest = /(?:exercise|challenge|practice|text|generate)/i.test(inputValue);
+      const isExerciseRequest = /(?:exercise|challenge|practice|text|generate|training|drill|lesson|advanced|beginner|intermediate)/i.test(inputValue);
       
       if (isExerciseRequest) {
-        // Generate exercise
+        // Generate exercise via API
         const difficulty = extractDifficulty(inputValue);
         const focusKeys = extractFocusKeys(inputValue);
         
-        const exercise = await aiService.generateExercise(
-          inputValue,
-          difficulty,
-          focusKeys
-        );
+        const response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'generateExercise',
+            prompt: inputValue,
+            difficulty,
+            focusKeys
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
         
-        onExerciseGenerated(exercise);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to generate exercise');
+        }
+        
+        onExerciseGenerated(result.data);
         
         const aiResponse: ChatMessage = {
           role: 'assistant',
@@ -84,12 +115,33 @@ export const AIChat: React.FC<AIChatProps> = ({
         
         setMessages(prev => [...prev, aiResponse]);
       } else {
-        // Regular chat response
-        const response = await aiService.chatWithUser(inputValue, performanceData);
+        // Regular chat response via API
+        const response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'chat',
+            message: inputValue,
+            context: performanceData,
+            lastSessionErrors
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to get chat response');
+        }
         
         const aiResponse: ChatMessage = {
           role: 'assistant',
-          content: response,
+          content: result.data,
           timestamp: new Date()
         };
         
@@ -140,6 +192,22 @@ export const AIChat: React.FC<AIChatProps> = ({
   };
 
   const extractFocusKeys = (input: string): string[] | undefined => {
+    // Check if user is asking for drill based on problematic/weak letters
+    const problematicKeyRequest = /(?:problematic|weak|difficult|error|mistake|struggle|drill|those)\s*(?:letters?|keys?)/i.test(input);
+    
+    if (problematicKeyRequest && lastSessionErrors) {
+      // Use the actual problematic keys from last session
+      const problemKeys = Object.entries(lastSessionErrors.keyErrorMap)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5) // Top 5 most problematic keys
+        .map(([key]) => key)
+        .filter(key => /[a-z]/i.test(key));
+      
+      if (problemKeys.length > 0) {
+        return problemKeys;
+      }
+    }
+    
     // Look for patterns like "focus on a,s,d" or "practice keys: qwerty"
     const keyMatch = input.match(/(?:focus on|practice|keys?:?\s*)([a-z,\s]+)/i);
     if (keyMatch) {
@@ -215,6 +283,8 @@ export const AIChat: React.FC<AIChatProps> = ({
       </p>
     </div>
   );
-};
+});
+
+AIChat.displayName = 'AIChat';
 
 export default AIChat;

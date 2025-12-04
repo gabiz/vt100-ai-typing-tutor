@@ -5,6 +5,13 @@
 
 import { PerformanceMetrics, TypingProgress } from './types';
 
+export interface TypingError {
+  position: number;
+  expected: string;
+  typed: string;
+  timestamp: number;
+}
+
 export interface TypingEngineState {
   text: string;
   currentPosition: number;
@@ -14,6 +21,7 @@ export interface TypingEngineState {
   endTime: Date | null;
   isActive: boolean;
   keyErrorMap: Record<string, number>;
+  detailedErrors: TypingError[];
 }
 
 export class TypingEngine {
@@ -28,7 +36,8 @@ export class TypingEngine {
       startTime: null,
       endTime: null,
       isActive: false,
-      keyErrorMap: {}
+      keyErrorMap: {},
+      detailedErrors: []
     };
   }
 
@@ -68,7 +77,8 @@ export class TypingEngine {
       startTime: null,
       endTime: null,
       isActive: false,
-      keyErrorMap: {}
+      keyErrorMap: {},
+      detailedErrors: []
     };
   }
 
@@ -110,6 +120,14 @@ export class TypingEngine {
       // Track key errors for analytics
       if (expectedChar) {
         this.state.keyErrorMap[expectedChar] = (this.state.keyErrorMap[expectedChar] || 0) + 1;
+        
+        // Track detailed error information
+        this.state.detailedErrors.push({
+          position: this.state.currentPosition,
+          expected: expectedChar,
+          typed: inputChar,
+          timestamp: Date.now()
+        });
       }
     }
 
@@ -227,6 +245,13 @@ export class TypingEngine {
     const remaining = this.state.text.slice(this.state.currentPosition + 1);
 
     return { completed, current, remaining };
+  }
+
+  /**
+   * Get detailed error information for analysis
+   */
+  getDetailedErrors(): TypingError[] {
+    return [...this.state.detailedErrors];
   }
 
   /**

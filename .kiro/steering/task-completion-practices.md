@@ -14,38 +14,7 @@ Before marking any task as complete, ensure:
 - [ ] Code follows TypeScript best practices
 - [ ] All requirements are satisfied
 
-### 2. Auto-Commit Instructions
-
-**IMPORTANT**: After completing each task, you MUST commit your changes with a descriptive message:
-
-```bash
-# Stage all changes
-git add .
-
-# Commit with descriptive message following this format:
-git commit -m "feat: [task-number] [brief description]
-
-- [specific change 1]
-- [specific change 2] 
-- [specific change 3]
-
-Validates: Requirements [requirement-numbers]"
-```
-
-**Example commit message:**
-```bash
-git commit -m "feat: task-2.1 implement core data models and types
-
-- Create comprehensive TypeScript interfaces in lib/types.ts
-- Add TypingExercise, PerformanceMetrics, SessionData interfaces
-- Implement service interfaces for AIService, StorageService, AudioService
-- Update existing ai-service.ts to use centralized types
-- Add proper error classes and type guards
-
-Validates: Requirements 5.2, 7.2"
-```
-
-### 3. Documentation Requirements
+### 2. Documentation Requirements
 
 #### Code Documentation
 - All interfaces and classes must have JSDoc comments
@@ -79,7 +48,7 @@ export interface TypingExercise {
 }
 ```
 
-### 4. Property-Based Testing Documentation
+### 3. Property-Based Testing Documentation
 
 All property-based tests MUST include:
 - Feature reference comment
@@ -91,14 +60,14 @@ All property-based tests MUST include:
 // **Validates: Requirements 5.2**
 ```
 
-### 5. Task Status Updates
+### 4. Task Status Updates
 
 Always update task status using the appropriate tools:
 - Mark tasks as "in_progress" when starting
 - Mark tasks as "completed" when finished
 - Update PBT status for property-based tests
 
-### 6. Final Verification
+### 5. Final Verification
 
 Before considering any task complete:
 
@@ -107,7 +76,6 @@ Before considering any task complete:
 3. **Test Verification**: `npm test` must pass
 4. **Functionality Verification**: Manual testing if applicable
 5. **Documentation Verification**: All code is properly documented
-6. **Commit Verification**: Changes are committed with proper message
 
 ## Commit Message Standards
 

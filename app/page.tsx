@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   TerminalInterface, 
   AIChat, 
   TypingArea, 
   StatsDisplay, 
   SessionControls,
-  SessionHistory 
+  SessionHistory,
+  Modal
 } from '@/components';
 import { 
   TypingExercise, 
@@ -55,6 +56,7 @@ export default function Home() {
 
   // Services
   const storageService = useMemo(() => new StorageServiceImpl(), []);
+  const aiChatRef = useRef<{ addMessage: (content: string) => void } | null>(null);
 
   // Load performance history on mount
   useEffect(() => {
@@ -171,7 +173,7 @@ export default function Home() {
     typingEngine.reset();
   }, [typingEngine]);
 
-  const completeSession = useCallback(() => {
+  const completeSession = useCallback(async () => {
     if (!currentSession || !currentExercise) {
       setError('Cannot complete session: missing session or exercise data.');
       return;
@@ -195,15 +197,55 @@ export default function Home() {
       const updatedHistory = storageService.getSessionHistory();
       setPerformanceHistory(updatedHistory);
       
+      // Collect detailed errors from typing engine
+      const detailedErrors = typingEngine.getDetailedErrors();
+      
       // Save final metrics before resetting session
-      setFinalSessionMetrics(completedSession.metrics);
+      setFinalSessionMetrics({
+        ...completedSession.metrics,
+        detailedErrors
+      });
+      
+      // Generate AI session analysis
+      try {
+        const response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action: 'analyzeSession',
+            sessionData: {
+              wpm: completedSession.metrics.wpm,
+              accuracy: completedSession.metrics.accuracy,
+              errorCount: completedSession.metrics.errorCount,
+              timeElapsed: completedSession.metrics.timeElapsed,
+              keyErrorMap: completedSession.metrics.keyErrorMap,
+              detailedErrors,
+              exerciseText: currentExercise.text
+            }
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success) {
+            // Add analysis to chat
+            if (aiChatRef.current) {
+              aiChatRef.current.addMessage(result.data);
+            }
+          }
+        }
+      } catch (analysisError) {
+        console.error('Failed to generate session analysis:', analysisError);
+        // Don't show error for analysis failure, it's not critical
+      }
       
       // Reset session state
       setCurrentSession(null);
       setIsTypingActive(false);
       setIsPaused(false);
       setTerminalStatus('READY');
-      setError(null); // Clear any errors on successful completion
       
     } catch (error) {
       console.error('Failed to save session:', error);
@@ -223,7 +265,7 @@ export default function Home() {
       setIsPaused(false);
       setTerminalStatus('READY');
     }
-  }, [currentSession, currentExercise, typingProgress.timeElapsed, storageService]);
+  }, [currentSession, currentExercise, typingProgress.timeElapsed, storageService, typingEngine]);
 
   // Handle typing progress updates
   const handleTypingProgress = useCallback((progress: TypingProgress) => {
@@ -302,11 +344,7 @@ export default function Home() {
     }
   }, [resetSession]);
 
-  // Handle new text request
-  const handleNewText = useCallback(() => {
-    setCurrentExercise(defaultExercise);
-    resetSession();
-  }, [resetSession, defaultExercise]);
+
 
   // Clear history
   const handleClearHistory = useCallback(() => {
@@ -387,13 +425,20 @@ export default function Home() {
               </div>
             )}
 
+
+
             {/* AI Chat Area */}
             {performanceHistory && (
               <AIChat 
+                ref={aiChatRef}
                 onExerciseGenerated={handleExerciseGenerated}
                 performanceData={performanceHistory}
                 onError={handleAIError}
                 onThinkingChange={handleAIThinking}
+                lastSessionErrors={finalSessionMetrics ? {
+                  keyErrorMap: finalSessionMetrics.keyErrorMap,
+                  detailedErrors: finalSessionMetrics.detailedErrors || []
+                } : undefined}
               />
             )}
 
@@ -420,7 +465,6 @@ export default function Home() {
               onStart={startSession}
               onStop={stopSession}
               onReset={resetSession}
-              onNewText={handleNewText}
               isActive={isTypingActive}
               isPaused={isPaused}
             />
@@ -432,21 +476,28 @@ export default function Home() {
               errors={currentMetrics.errorCount}
               charactersTyped={currentMetrics.charactersTyped}
               totalCharacters={currentExercise?.text.length || 0}
-              timeElapsed={currentMetrics.timeElapsed}
               hasActiveSession={hasStartedSession}
             />
           </div>
         </TerminalInterface>
 
-        {/* Session History */}
-        {showHistory && performanceHistory && (
-          <div className="mt-6">
+        {/* Session History Modal */}
+        <Modal
+          isOpen={showHistory}
+          onClose={() => setShowHistory(false)}
+          title="SESSION HISTORY"
+        >
+          {performanceHistory ? (
             <SessionHistory 
               performanceHistory={performanceHistory}
               onClearHistory={handleClearHistory}
             />
-          </div>
-        )}
+          ) : (
+            <div className="text-center text-[#00ff00]/60 font-mono">
+              <p>Loading history...</p>
+            </div>
+          )}
+        </Modal>
       </div>
     </main>
   );

@@ -59,9 +59,8 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({
 
   if (totalSessions === 0) {
     return (
-      <div className="bg-black border border-green-400 p-4 rounded font-mono text-green-400">
-        <h3 className="text-lg font-bold mb-4 text-center">SESSION HISTORY</h3>
-        <div className="text-center text-green-300">
+      <div className="font-mono text-[#00ff00]">
+        <div className="text-center text-[#00ff00]/80">
           <p>No completed sessions yet.</p>
           <p className="mt-2 text-sm">Complete a typing exercise to see your progress here!</p>
         </div>
@@ -70,46 +69,45 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({
   }
 
   return (
-    <div className="bg-black border border-green-400 p-4 rounded font-mono text-green-400">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-bold">SESSION HISTORY</h3>
+    <div className="font-mono text-[#00ff00]">
+      <div className="flex justify-end items-center mb-4">
         {onClearHistory && (
           <button
             onClick={onClearHistory}
             className="text-xs px-2 py-1 border border-red-400 text-red-400 hover:bg-red-400 hover:text-black transition-colors"
           >
-            CLEAR
+            CLEAR HISTORY
           </button>
         )}
       </div>
 
       {/* Overall Statistics */}
       <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="border border-green-600 p-3">
-          <div className="text-xs text-green-300 mb-1">TOTAL SESSIONS</div>
-          <div className="text-xl font-bold">{totalSessions}</div>
+        <div className="border border-[#00ff00]/30 p-3 rounded">
+          <div className="text-xs text-[#00ff00]/60 mb-1">TOTAL SESSIONS</div>
+          <div className="text-xl font-bold text-[#00ff00]">{totalSessions}</div>
         </div>
-        <div className="border border-green-600 p-3">
-          <div className="text-xs text-green-300 mb-1">TREND</div>
+        <div className="border border-[#00ff00]/30 p-3 rounded">
+          <div className="text-xs text-[#00ff00]/60 mb-1">TREND</div>
           <div className={`text-xl font-bold ${trendInfo.color}`}>
             {trendInfo.symbol} {trendInfo.text}
           </div>
         </div>
-        <div className="border border-green-600 p-3">
-          <div className="text-xs text-green-300 mb-1">AVG WPM</div>
-          <div className="text-xl font-bold">{averageWPM}</div>
+        <div className="border border-[#00ff00]/30 p-3 rounded">
+          <div className="text-xs text-[#00ff00]/60 mb-1">AVG WPM</div>
+          <div className="text-xl font-bold text-[#00ff00]">{averageWPM}</div>
         </div>
-        <div className="border border-green-600 p-3">
-          <div className="text-xs text-green-300 mb-1">AVG ACCURACY</div>
-          <div className="text-xl font-bold">{averageAccuracy}%</div>
+        <div className="border border-[#00ff00]/30 p-3 rounded">
+          <div className="text-xs text-[#00ff00]/60 mb-1">AVG ACCURACY</div>
+          <div className="text-xl font-bold text-[#00ff00]">{averageAccuracy}%</div>
         </div>
       </div>
 
       {/* Progress Graph (Simple ASCII-style visualization) */}
       {progressData.length > 1 && (
         <div className="mb-6">
-          <h4 className="text-sm font-bold mb-3 text-green-300">WPM PROGRESS</h4>
-          <div className="border border-green-600 p-3 bg-gray-900">
+          <h4 className="text-sm font-bold mb-3 text-[#00ff00]/80">WPM PROGRESS</h4>
+          <div className="border border-[#00ff00]/30 p-3 bg-[#0a0a0a] rounded">
             <div className="space-y-1">
               {progressData.slice(-10).map((data, index) => {
                 const maxWPM = Math.max(...progressData.map(d => d.wpm));
@@ -118,9 +116,9 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({
                 
                 return (
                   <div key={index} className="flex items-center text-xs">
-                    <span className="w-8 text-green-300">{data.sessionNumber}:</span>
-                    <span className="text-green-400 mr-2">{bar}</span>
-                    <span className="text-green-300">{data.wpm} WPM</span>
+                    <span className="w-8 text-[#00ff00]/60">{data.sessionNumber}:</span>
+                    <span className="text-[#00ff00] mr-2">{bar}</span>
+                    <span className="text-[#00ff00]/80">{data.wpm} WPM</span>
                   </div>
                 );
               })}
