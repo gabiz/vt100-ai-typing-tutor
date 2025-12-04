@@ -10,7 +10,7 @@ export class AIServiceImpl {
   private anthropicClient = createAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
   })
-  private model = this.anthropicClient('claude-3-haiku-20240307')
+  private model = this.anthropicClient('claude-haiku-4-5-20251001')
 
   async generateExercise(
     prompt: string, 
