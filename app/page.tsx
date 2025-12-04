@@ -14,7 +14,8 @@ import {
   PerformanceHistory, 
   SessionData, 
   TypingProgress,
-  TypingStatus
+  TypingStatus,
+  PerformanceMetrics
 } from '@/lib/types';
 import { StorageServiceImpl } from '@/lib/storage-service';
 import { TypingEngine } from '@/lib/typing-engine';
@@ -46,6 +47,7 @@ export default function Home() {
   const [terminalStatus, setTerminalStatus] = useState<TypingStatus>('READY');
   const [showHistory, setShowHistory] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
+  const [finalSessionMetrics, setFinalSessionMetrics] = useState<PerformanceMetrics | null>(null);
   
   // Error and loading states
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +159,7 @@ export default function Home() {
     setIsPaused(false);
     setTerminalStatus('READY');
     setHasStartedSession(false);
+    setFinalSessionMetrics(null);
     
     setTypingProgress({
       currentPosition: 0,
@@ -192,6 +195,9 @@ export default function Home() {
       const updatedHistory = storageService.getSessionHistory();
       setPerformanceHistory(updatedHistory);
       
+      // Save final metrics before resetting session
+      setFinalSessionMetrics(completedSession.metrics);
+      
       // Reset session state
       setCurrentSession(null);
       setIsTypingActive(false);
@@ -204,6 +210,14 @@ export default function Home() {
       setError('Failed to save session data. Your progress may not be saved.');
       
       // Still reset the session state even if saving failed
+      // Save final metrics before resetting session (even if save failed)
+      if (currentSession) {
+        setFinalSessionMetrics({
+          ...currentSession.metrics,
+          timeElapsed: typingProgress.timeElapsed
+        });
+      }
+      
       setCurrentSession(null);
       setIsTypingActive(false);
       setIsPaused(false);
@@ -334,7 +348,7 @@ export default function Home() {
   }, [error]);
 
   // Current metrics for display
-  const currentMetrics = currentSession?.metrics || {
+  const currentMetrics = currentSession?.metrics || finalSessionMetrics || {
     wpm: 0,
     accuracy: 100,
     errorCount: 0,
