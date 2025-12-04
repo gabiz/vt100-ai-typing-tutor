@@ -870,4 +870,497 @@ describe('TypingEngine Property Tests', () => {
       expect(finalMetrics.charactersTyped).toBe(5);
     });
   });
+
+  describe('Continuous Metrics Updates', () => {
+    it('should update performance metrics in real-time as characters are typed', () => {
+      // **Feature: ai-typing-tutor, Property 7: Continuous metrics updates**
+      // **Validates: Requirements 3.5**
+      fc.assert(fc.property(
+        fc.string({ minLength: 5, maxLength: 20 }),
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 15 }),
+        (text: string, inputPattern: boolean[]) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          let expectedCorrectChars = 0;
+          let expectedIncorrectChars = 0;
+          let expectedTotalChars = 0;
+          
+          // Process each character and verify metrics update immediately
+          for (const shouldTypeCorrect of inputPattern) {
+            if (engine.isComplete()) break;
+            
+            const expectedChar = text[engine.getCurrentPosition()];
+            const initialMetrics = engine.getMetrics();
+            
+            if (shouldTypeCorrect) {
+              engine.processCharacter(expectedChar);
+              expectedCorrectChars++;
+            } else {
+              const wrongChar = expectedChar === 'a' ? 'b' : 'a';
+              engine.processCharacter(wrongChar);
+              expectedIncorrectChars++;
+            }
+            expectedTotalChars++;
+            
+            // Verify metrics updated immediately after each character
+            const updatedMetrics = engine.getMetrics();
+            
+            // Character counts should be updated
+            expect(updatedMetrics.charactersTyped).toBe(expectedTotalChars);
+            expect(updatedMetrics.errorCount).toBe(expectedIncorrectChars);
+            
+            // Progress should be updated
+            const progress = engine.getProgress();
+            expect(progress.correctChars).toBe(expectedCorrectChars);
+            expect(progress.incorrectChars).toBe(expectedIncorrectChars);
+            
+            // Accuracy should be recalculated
+            const expectedAccuracy = expectedTotalChars > 0 ? 
+              Math.round((expectedCorrectChars / expectedTotalChars) * 10000) / 100 : 100;
+            expect(updatedMetrics.accuracy).toBeCloseTo(expectedAccuracy, 2);
+            
+            // WPM should be recalculated (will be 0 or positive)
+            expect(updatedMetrics.wpm).toBeGreaterThanOrEqual(0);
+            
+            // Time elapsed should be updated (non-decreasing)
+            expect(updatedMetrics.timeElapsed).toBeGreaterThanOrEqual(initialMetrics.timeElapsed);
+          }
+        }
+      ), { numRuns: 100 });
+    });
+
+    it('should maintain metric consistency during active typing session', () => {
+      // **Feature: ai-typing-tutor, Property 7: Continuous metrics updates**
+      // **Validates: Requirements 3.5**
+      fc.assert(fc.property(
+        fc.string({ minLength: 3, maxLength: 10 }),
+        fc.integer({ min: 1, max: 5 }),
+        (text: string, pauseAfterChars: number) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Type some characters
+          for (let i = 0; i < pauseAfterChars && i < text.length; i++) {
+            engine.processCharacter(text[i]);
+          }
+          
+          const metricsBeforePause = engine.getMetrics();
+          const progressBeforePause = engine.getProgress();
+          
+          // Stop and restart (simulating pause/resume)
+          engine.stop();
+          engine.start();
+          
+          // Metrics should be preserved after pause/resume
+          const metricsAfterResume = engine.getMetrics();
+          const progressAfterResume = engine.getProgress();
+          
+          expect(metricsAfterResume.charactersTyped).toBe(metricsBeforePause.charactersTyped);
+          expect(metricsAfterResume.errorCount).toBe(metricsBeforePause.errorCount);
+          expect(metricsAfterResume.accuracy).toBe(metricsBeforePause.accuracy);
+          
+          expect(progressAfterResume.correctChars).toBe(progressBeforePause.correctChars);
+          expect(progressAfterResume.incorrectChars).toBe(progressBeforePause.incorrectChars);
+          expect(progressAfterResume.currentPosition).toBe(progressBeforePause.currentPosition);
+        }
+      ), { numRuns: 100 });
+    });
+
+    it('should reset all metrics to initial state when session is reset', () => {
+      // **Feature: ai-typing-tutor, Property 7: Continuous metrics updates**
+      // **Validates: Requirements 3.5**
+      fc.assert(fc.property(
+        fc.string({ minLength: 3, maxLength: 10 }),
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 5 }),
+        (text: string, inputPattern: boolean[]) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Type some characters to generate metrics
+          for (const shouldTypeCorrect of inputPattern) {
+            if (engine.isComplete()) break;
+            
+            const expectedChar = text[engine.getCurrentPosition()];
+            
+            if (shouldTypeCorrect) {
+              engine.processCharacter(expectedChar);
+            } else {
+              const wrongChar = expectedChar === 'a' ? 'b' : 'a';
+              engine.processCharacter(wrongChar);
+            }
+          }
+          
+          // Verify we have some metrics
+          const metricsBeforeReset = engine.getMetrics();
+          
+          // At least one character should have been typed
+          expect(metricsBeforeReset.charactersTyped).toBeGreaterThan(0);
+          
+          // Reset the session
+          engine.reset();
+          
+          // All metrics should return to initial state
+          const metricsAfterReset = engine.getMetrics();
+          const progressAfterReset = engine.getProgress();
+          
+          expect(metricsAfterReset.wpm).toBe(0);
+          expect(metricsAfterReset.accuracy).toBe(100);
+          expect(metricsAfterReset.errorCount).toBe(0);
+          expect(metricsAfterReset.charactersTyped).toBe(0);
+          expect(metricsAfterReset.timeElapsed).toBe(0);
+          
+          expect(progressAfterReset.currentPosition).toBe(0);
+          expect(progressAfterReset.correctChars).toBe(0);
+          expect(progressAfterReset.incorrectChars).toBe(0);
+          expect(progressAfterReset.timeElapsed).toBe(0);
+        }
+      ), { numRuns: 100 });
+    });
+
+    it('should update time elapsed continuously during active session', () => {
+      // **Feature: ai-typing-tutor, Property 7: Continuous metrics updates**
+      // **Validates: Requirements 3.5**
+      fc.assert(fc.property(
+        fc.string({ minLength: 2, maxLength: 5 }),
+        (text: string) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Get initial time
+          const initialMetrics = engine.getMetrics();
+          const initialTime = initialMetrics.timeElapsed;
+          
+          // Type a character
+          engine.processCharacter(text[0]);
+          
+          // Time should have progressed (or at least not decreased)
+          const metricsAfterFirstChar = engine.getMetrics();
+          expect(metricsAfterFirstChar.timeElapsed).toBeGreaterThanOrEqual(initialTime);
+          
+          // Type another character
+          if (text.length > 1) {
+            engine.processCharacter(text[1]);
+            
+            const metricsAfterSecondChar = engine.getMetrics();
+            expect(metricsAfterSecondChar.timeElapsed).toBeGreaterThanOrEqual(metricsAfterFirstChar.timeElapsed);
+          }
+          
+          // Progress should also reflect time updates
+          const progress = engine.getProgress();
+          expect(progress.timeElapsed).toBe(engine.getMetrics().timeElapsed);
+        }
+      ), { numRuns: 50 }); // Fewer runs since this involves timing
+    });
+
+    it('should maintain mathematical relationships between metrics', () => {
+      // **Feature: ai-typing-tutor, Property 7: Continuous metrics updates**
+      // **Validates: Requirements 3.5**
+      fc.assert(fc.property(
+        fc.string({ minLength: 5, maxLength: 15 }),
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 10 }),
+        (text: string, inputPattern: boolean[]) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Process characters and verify mathematical relationships hold
+          for (const shouldTypeCorrect of inputPattern) {
+            if (engine.isComplete()) break;
+            
+            const expectedChar = text[engine.getCurrentPosition()];
+            
+            if (shouldTypeCorrect) {
+              engine.processCharacter(expectedChar);
+            } else {
+              const wrongChar = expectedChar === 'a' ? 'b' : 'a';
+              engine.processCharacter(wrongChar);
+            }
+            
+            const metrics = engine.getMetrics();
+            const progress = engine.getProgress();
+            
+            // Verify mathematical relationships
+            expect(progress.correctChars + progress.incorrectChars).toBe(metrics.charactersTyped);
+            expect(progress.incorrectChars).toBe(metrics.errorCount);
+            
+            // Accuracy should match calculation
+            if (metrics.charactersTyped > 0) {
+              const expectedAccuracy = Math.round((progress.correctChars / metrics.charactersTyped) * 10000) / 100;
+              expect(metrics.accuracy).toBeCloseTo(expectedAccuracy, 2);
+            } else {
+              expect(metrics.accuracy).toBe(100);
+            }
+            
+            // WPM should match calculation if time > 0
+            if (metrics.timeElapsed > 0) {
+              const expectedWPM = TypingEngine.calculateWPM(progress.correctChars, metrics.timeElapsed);
+              expect(metrics.wpm).toBeCloseTo(expectedWPM, 1);
+            }
+          }
+        }
+      ), { numRuns: 100 });
+    });
+  });
+
+  describe('Time Tracking Accuracy', () => {
+    it('should accurately reflect the duration since session start', () => {
+      // **Feature: ai-typing-tutor, Property 11: Time tracking accuracy**
+      // **Validates: Requirements 4.4**
+      fc.assert(fc.property(
+        fc.string({ minLength: 3, maxLength: 10 }),
+        fc.integer({ min: 1, max: 5 }),
+        (text: string, charactersToType: number) => {
+          const engine = new TypingEngine(text);
+          
+          // Record start time
+          const startTime = Date.now();
+          engine.start();
+          
+          // Type some characters
+          const charsToType = Math.min(charactersToType, text.length);
+          for (let i = 0; i < charsToType; i++) {
+            engine.processCharacter(text[i]);
+          }
+          
+          // Get elapsed time from engine
+          const metrics = engine.getMetrics();
+          const progress = engine.getProgress();
+          const actualElapsed = Date.now() - startTime;
+          
+          // Engine time should be reasonably close to actual elapsed time
+          // Allow for some variance due to execution time
+          expect(metrics.timeElapsed).toBeGreaterThanOrEqual(0);
+          expect(metrics.timeElapsed).toBeLessThanOrEqual(actualElapsed + 100); // 100ms tolerance
+          
+          // Progress time should match metrics time
+          expect(progress.timeElapsed).toBe(metrics.timeElapsed);
+          
+          // Time should be non-decreasing
+          expect(metrics.timeElapsed).toBeGreaterThanOrEqual(0);
+        }
+      ), { numRuns: 50 }); // Fewer runs since this involves timing
+    });
+
+    it('should maintain time consistency across stop/start operations', () => {
+      // **Feature: ai-typing-tutor, Property 11: Time tracking accuracy**
+      // **Validates: Requirements 4.4**
+      fc.assert(fc.property(
+        fc.string({ minLength: 3, maxLength: 8 }),
+        fc.integer({ min: 1, max: 3 }),
+        (text: string, firstRoundChars: number) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Type some characters
+          const charsToType = Math.min(firstRoundChars, text.length);
+          for (let i = 0; i < charsToType; i++) {
+            engine.processCharacter(text[i]);
+          }
+          
+          const timeBeforeStop = engine.getMetrics().timeElapsed;
+          
+          // Stop the engine
+          engine.stop();
+          
+          // Time should be preserved when stopped
+          const timeAfterStop = engine.getMetrics().timeElapsed;
+          expect(timeAfterStop).toBe(timeBeforeStop);
+          
+          // Restart the engine
+          engine.start();
+          
+          // Time should continue from where it left off (or be very close)
+          const timeAfterRestart = engine.getMetrics().timeElapsed;
+          expect(timeAfterRestart).toBeGreaterThanOrEqual(timeBeforeStop);
+          
+          // Type more characters
+          if (!engine.isComplete()) {
+            const currentPos = engine.getCurrentPosition();
+            if (currentPos < text.length) {
+              engine.processCharacter(text[currentPos]);
+            }
+          }
+          
+          // Time should continue to increase
+          const finalTime = engine.getMetrics().timeElapsed;
+          expect(finalTime).toBeGreaterThanOrEqual(timeAfterRestart);
+        }
+      ), { numRuns: 50 });
+    });
+
+    it('should reset time to zero when session is reset', () => {
+      // **Feature: ai-typing-tutor, Property 11: Time tracking accuracy**
+      // **Validates: Requirements 4.4**
+      fc.assert(fc.property(
+        fc.string({ minLength: 2, maxLength: 8 }),
+        fc.integer({ min: 1, max: 3 }),
+        (text: string, charactersToType: number) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Type some characters to accumulate time
+          const charsToType = Math.min(charactersToType, text.length);
+          for (let i = 0; i < charsToType; i++) {
+            engine.processCharacter(text[i]);
+          }
+          
+          // Verify we have some elapsed time
+          const timeBeforeReset = engine.getMetrics().timeElapsed;
+          expect(timeBeforeReset).toBeGreaterThanOrEqual(0);
+          
+          // Reset the session
+          engine.reset();
+          
+          // Time should be reset to zero
+          const timeAfterReset = engine.getMetrics().timeElapsed;
+          expect(timeAfterReset).toBe(0);
+          
+          // Progress time should also be reset
+          const progressAfterReset = engine.getProgress();
+          expect(progressAfterReset.timeElapsed).toBe(0);
+        }
+      ), { numRuns: 50 });
+    });
+
+    it('should track time independently of typing activity', () => {
+      // **Feature: ai-typing-tutor, Property 11: Time tracking accuracy**
+      // **Validates: Requirements 4.4**
+      fc.assert(fc.property(
+        fc.string({ minLength: 5, maxLength: 10 }),
+        fc.array(fc.boolean(), { minLength: 1, max: 5 }),
+        (text: string, typingPattern: boolean[]) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          let previousTime = 0;
+          
+          // Process typing pattern and verify time increases regardless of correctness
+          for (const shouldType of typingPattern) {
+            if (engine.isComplete()) break;
+            
+            const timeBeforeAction = engine.getMetrics().timeElapsed;
+            expect(timeBeforeAction).toBeGreaterThanOrEqual(previousTime);
+            
+            if (shouldType) {
+              const expectedChar = text[engine.getCurrentPosition()];
+              engine.processCharacter(expectedChar);
+            }
+            // Even if we don't type, time should still progress
+            
+            const timeAfterAction = engine.getMetrics().timeElapsed;
+            expect(timeAfterAction).toBeGreaterThanOrEqual(timeBeforeAction);
+            
+            previousTime = timeAfterAction;
+          }
+        }
+      ), { numRuns: 50 });
+    });
+
+    it('should provide consistent time values between metrics and progress', () => {
+      // **Feature: ai-typing-tutor, Property 11: Time tracking accuracy**
+      // **Validates: Requirements 4.4**
+      fc.assert(fc.property(
+        fc.string({ minLength: 3, maxLength: 8 }),
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 5 }),
+        (text: string, inputPattern: boolean[]) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Process characters and verify time consistency
+          for (const shouldTypeCorrect of inputPattern) {
+            if (engine.isComplete()) break;
+            
+            const expectedChar = text[engine.getCurrentPosition()];
+            
+            if (shouldTypeCorrect) {
+              engine.processCharacter(expectedChar);
+            } else {
+              const wrongChar = expectedChar === 'a' ? 'b' : 'a';
+              engine.processCharacter(wrongChar);
+            }
+            
+            // Verify time consistency between metrics and progress
+            const metrics = engine.getMetrics();
+            const progress = engine.getProgress();
+            
+            expect(progress.timeElapsed).toBe(metrics.timeElapsed);
+            expect(metrics.timeElapsed).toBeGreaterThanOrEqual(0);
+          }
+        }
+      ), { numRuns: 100 });
+    });
+
+    it('should handle edge cases in time tracking', () => {
+      // **Feature: ai-typing-tutor, Property 11: Time tracking accuracy**
+      // **Validates: Requirements 4.4**
+      
+      const engine = new TypingEngine('test');
+      
+      // Before starting, time should be 0
+      expect(engine.getMetrics().timeElapsed).toBe(0);
+      expect(engine.getProgress().timeElapsed).toBe(0);
+      
+      // Start the engine
+      engine.start();
+      
+      // Time should start tracking (may be 0 initially but should not be negative)
+      expect(engine.getMetrics().timeElapsed).toBeGreaterThanOrEqual(0);
+      
+      // Type a character
+      engine.processCharacter('t');
+      
+      // Time should have progressed or stayed the same (never decrease)
+      const timeAfterFirstChar = engine.getMetrics().timeElapsed;
+      expect(timeAfterFirstChar).toBeGreaterThanOrEqual(0);
+      
+      // Stop and restart multiple times
+      engine.stop();
+      const timeAfterStop = engine.getMetrics().timeElapsed;
+      expect(timeAfterStop).toBe(timeAfterFirstChar);
+      
+      engine.start();
+      const timeAfterRestart = engine.getMetrics().timeElapsed;
+      expect(timeAfterRestart).toBeGreaterThanOrEqual(timeAfterStop);
+      
+      // Reset should clear time
+      engine.reset();
+      expect(engine.getMetrics().timeElapsed).toBe(0);
+      expect(engine.getProgress().timeElapsed).toBe(0);
+    });
+
+    it('should maintain time precision for WPM calculations', () => {
+      // **Feature: ai-typing-tutor, Property 11: Time tracking accuracy**
+      // **Validates: Requirements 4.4**
+      fc.assert(fc.property(
+        fc.string({ minLength: 5, maxLength: 15 }),
+        fc.integer({ min: 1, max: 10 }),
+        (text: string, charactersToType: number) => {
+          const engine = new TypingEngine(text);
+          engine.start();
+          
+          // Type characters
+          const charsToType = Math.min(charactersToType, text.length);
+          for (let i = 0; i < charsToType; i++) {
+            engine.processCharacter(text[i]);
+          }
+          
+          const metrics = engine.getMetrics();
+          
+          // If time has elapsed, WPM calculation should use the tracked time
+          if (metrics.timeElapsed > 0) {
+            const expectedWPM = TypingEngine.calculateWPM(charsToType, metrics.timeElapsed);
+            expect(metrics.wpm).toBeCloseTo(expectedWPM, 1);
+          }
+          
+          // Time should be precise enough for meaningful WPM calculations
+          expect(metrics.timeElapsed).toBeGreaterThanOrEqual(0);
+          
+          // Time precision should be reasonable (not overly precise or imprecise)
+          if (metrics.timeElapsed > 0) {
+            expect(metrics.timeElapsed).toBeLessThan(10000); // Less than 10 seconds for test
+          }
+        }
+      ), { numRuns: 50 });
+    });
+  });
 });

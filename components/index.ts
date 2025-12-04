@@ -8,6 +8,7 @@ export { default as AIChat } from './AIChat';
 export { default as TypingArea } from './TypingArea';
 export { default as StatsDisplay } from './StatsDisplay';
 export { default as SessionControls } from './SessionControls';
+export { default as SessionHistory } from './SessionHistory';
 
 // Re-export types for convenience
 export type {
