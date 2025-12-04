@@ -22,6 +22,7 @@ export interface TypingEngineState {
   isActive: boolean;
   keyErrorMap: Record<string, number>;
   detailedErrors: TypingError[];
+  wasExplicitlyReset: boolean;
 }
 
 export class TypingEngine {
@@ -37,7 +38,8 @@ export class TypingEngine {
       endTime: null,
       isActive: false,
       keyErrorMap: {},
-      detailedErrors: []
+      detailedErrors: [],
+      wasExplicitlyReset: false
     };
   }
 
@@ -45,14 +47,17 @@ export class TypingEngine {
    * Start the typing session
    */
   start(): void {
-    // If the session was previously completed, reset it
-    if (this.isComplete()) {
+    // Only reset if the session was explicitly reset or if starting for the first time
+    if (this.isComplete() && this.state.wasExplicitlyReset) {
       this.reset();
     }
     
     this.state.isActive = true;
-    this.state.startTime = new Date();
+    if (!this.state.startTime) {
+      this.state.startTime = new Date();
+    }
     this.state.endTime = null;
+    this.state.wasExplicitlyReset = false;
   }
 
   /**
@@ -78,7 +83,8 @@ export class TypingEngine {
       endTime: null,
       isActive: false,
       keyErrorMap: {},
-      detailedErrors: []
+      detailedErrors: [],
+      wasExplicitlyReset: true
     };
   }
 

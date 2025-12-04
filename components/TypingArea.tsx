@@ -3,7 +3,7 @@
  * Implements requirements 2.1, 2.2, 2.3, 2.5
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { TypingAreaProps } from '@/lib/types';
 import { TypingEngine } from '@/lib/typing-engine';
 import { AudioServiceImpl } from '@/lib/audio-service';
@@ -18,7 +18,7 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
   isActive
 }) => {
   const [typingEngine] = useState(() => new TypingEngine(exercise.text));
-  const [displayText, setDisplayText] = useState(typingEngine.getDisplayText());
+
   const [lastInputWasIncorrect, setLastInputWasIncorrect] = useState(false);
   const [flashIncorrect, setFlashIncorrect] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -26,32 +26,22 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
 
   // Update engine when exercise changes
   useEffect(() => {
-    const updateDisplay = () => {
-      typingEngine.setText(exercise.text);
-      setDisplayText(typingEngine.getDisplayText());
-      setLastInputWasIncorrect(false);
-      setFlashIncorrect(false);
-    };
-    
-    updateDisplay();
+    typingEngine.setText(exercise.text);
   }, [exercise.text, typingEngine]);
 
   // Start/stop engine based on isActive prop
   useEffect(() => {
     if (isActive && !typingEngine.isActive()) {
       typingEngine.start();
-      // Update display after starting (which may include a reset)
-      // This setState is necessary to sync UI with engine state after reset
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDisplayText(typingEngine.getDisplayText());
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setLastInputWasIncorrect(false);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setFlashIncorrect(false);
     } else if (!isActive && typingEngine.isActive()) {
       typingEngine.stop();
     }
   }, [isActive, typingEngine]);
+
+  // Derive display text from engine state
+  const currentDisplayText = useMemo(() => {
+    return typingEngine.getDisplayText();
+  }, [typingEngine]);
 
   // Handle keyboard input
   const handleKeyPress = useCallback((event: KeyboardEvent) => {
@@ -72,8 +62,7 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
       
       const result = typingEngine.processCharacter(event.key);
       
-      // Update display
-      setDisplayText(typingEngine.getDisplayText());
+      // Display will update automatically via useMemo
       
       // Handle visual feedback for incorrect characters
       if (!result.isCorrect) {
@@ -148,11 +137,11 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
         >
           {/* Completed characters (green) */}
           <span className="text-[#00ff00]">
-            {displayText.completed}
+            {currentDisplayText.completed}
           </span>
           
           {/* Current character with cursor */}
-          {displayText.current && (
+          {currentDisplayText.current && (
             <span 
               className={`relative ${
                 lastInputWasIncorrect 
@@ -160,7 +149,7 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
                   : 'bg-[#00ff00]/20 text-[#00ff00]'
               } ${flashIncorrect ? 'animate-pulse bg-red-500/50' : ''}`}
             >
-              {displayText.current}
+              {currentDisplayText.current}
               {/* Blinking cursor */}
               {isActive && (
                 <span className="absolute -right-0.5 top-0 w-0.5 h-full bg-[#00ff00] animate-pulse"></span>
@@ -170,11 +159,11 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
           
           {/* Remaining characters (dim) */}
           <span className="text-[#00ff00]/40">
-            {displayText.remaining}
+            {currentDisplayText.remaining}
           </span>
           
           {/* Cursor at end if text is complete */}
-          {!displayText.current && isActive && (
+          {!currentDisplayText.current && isActive && (
             <span className="w-0.5 h-5 bg-[#00ff00] animate-pulse inline-block ml-1"></span>
           )}
         </div>

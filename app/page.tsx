@@ -396,7 +396,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
+    <main className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4 overflow-hidden">
       <div className="w-full max-w-6xl">
         <TerminalInterface 
           title="VT100 AI TYPING TUTOR" 

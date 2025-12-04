@@ -33,10 +33,9 @@ export const TerminalInterface: React.FC<TerminalInterfaceProps> = ({
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl">
-        {/* VT100 Terminal Container */}
-        <div className="terminal-container bg-[#1a1a1a] rounded-lg shadow-2xl border-4 border-[#2a2a2a] overflow-hidden">
+    <div className="w-full max-w-4xl mx-auto">
+      {/* VT100 Terminal Container */}
+      <div className="terminal-container bg-[#1a1a1a] rounded-lg shadow-2xl border-4 border-[#2a2a2a] overflow-hidden">
           {/* Terminal Header */}
           <div className="terminal-header bg-[#2a2a2a] px-4 py-2 flex items-center justify-between border-b-2 border-[#00ff00]">
             <div className="flex items-center gap-2">
@@ -93,12 +92,11 @@ export const TerminalInterface: React.FC<TerminalInterfaceProps> = ({
           </div>
         </div>
 
-        {/* Subtitle */}
-        <div className="text-center mt-6 text-[#00ff00]/40 font-mono text-sm">
-          Bringing obsolete technology back to life
-        </div>
+      {/* Subtitle */}
+      <div className="text-center mt-6 text-[#00ff00]/40 font-mono text-sm">
+        Bringing obsolete technology back to life
       </div>
-    </main>
+    </div>
   );
 };
 
