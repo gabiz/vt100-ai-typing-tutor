@@ -58,6 +58,8 @@ export interface TerminalInterfaceProps {
   children: React.ReactNode;
   title: string;
   status: 'READY' | 'AI THINKING' | 'TYPING' | 'PAUSED';
+  showHistory?: boolean;
+  onToggleHistory?: () => void;
 }
 
 export interface AIChatProps {

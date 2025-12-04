@@ -346,6 +346,8 @@ export default function Home() {
         <TerminalInterface 
           title="VT100 AI TYPING TUTOR" 
           status={terminalStatus}
+          showHistory={showHistory}
+          onToggleHistory={() => setShowHistory(!showHistory)}
         >
           <div className="space-y-6">
             {/* Error Display */}
@@ -418,16 +420,6 @@ export default function Home() {
           </div>
         </TerminalInterface>
 
-        {/* Session History Toggle */}
-        <div className="flex justify-center mt-4">
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="px-4 py-2 border border-green-400 text-green-400 hover:bg-green-400 hover:text-black transition-colors font-mono text-sm"
-          >
-            {showHistory ? 'HIDE HISTORY' : 'SHOW HISTORY'}
-          </button>
-        </div>
-
         {/* Session History */}
         {showHistory && performanceHistory && (
           <div className="mt-6">
@@ -437,11 +429,6 @@ export default function Home() {
             />
           </div>
         )}
-
-        {/* Subtitle */}
-        <div className="text-center mt-6 text-[#00ff00]/40 font-mono text-sm">
-          Bringing obsolete technology back to life
-        </div>
       </div>
     </main>
   );

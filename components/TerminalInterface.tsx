@@ -13,7 +13,9 @@ import { TerminalInterfaceProps } from '@/lib/types';
 export const TerminalInterface: React.FC<TerminalInterfaceProps> = ({
   children,
   title,
-  status
+  status,
+  showHistory = false,
+  onToggleHistory
 }) => {
   const getStatusColor = (status: string): string => {
     switch (status) {
@@ -72,10 +74,21 @@ export const TerminalInterface: React.FC<TerminalInterfaceProps> = ({
           {/* Terminal Footer with Status Display */}
           <div className="terminal-footer bg-[#2a2a2a] px-4 py-2 border-t-2 border-[#00ff00] flex justify-between items-center text-xs font-mono text-[#00ff00]/60">
             <span className={getStatusColor(status)}>{status}</span>
-            <button className="hover:text-[#00ff00] transition-colors flex items-center gap-1" title="Typing Stats">
-              <span>📊</span>
-              <span>TYPING STATS</span>
-            </button>
+            {onToggleHistory ? (
+              <button 
+                onClick={onToggleHistory}
+                className="hover:text-[#00ff00] transition-colors flex items-center gap-1" 
+                title="Session History"
+              >
+                <span>📊</span>
+                <span>{showHistory ? 'HIDE HISTORY' : 'SHOW HISTORY'}</span>
+              </button>
+            ) : (
+              <button className="hover:text-[#00ff00] transition-colors flex items-center gap-1" title="Typing Stats">
+                <span>📊</span>
+                <span>TYPING STATS</span>
+              </button>
+            )}
             <span>80x24</span>
           </div>
         </div>
