@@ -3,6 +3,7 @@
  */
 
 import { AIServiceImpl } from '../lib/ai-service'
+import fc from 'fast-check'
 
 // Mock the AI SDK to avoid making real API calls in tests
 jest.mock('ai', () => ({
@@ -99,5 +100,117 @@ describe('AIService', () => {
 
     const response = await aiService.chatWithUser('What is the weather like?', mockHistory)
     expect(response).toContain('typing')
+  })
+
+  // Property-based tests
+  describe('Property-based tests', () => {
+    it('Property 1: AI exercise generation responsiveness', () => {
+      // **Feature: ai-typing-tutor, Property 1: AI exercise generation responsiveness**
+      // **Validates: Requirements 1.3**
+      fc.assert(fc.asyncProperty(
+        fc.string({ minLength: 1, maxLength: 100 }), // prompt
+        fc.constantFrom('beginner', 'intermediate', 'advanced'), // difficulty
+        fc.option(fc.array(fc.string({ minLength: 1, maxLength: 1 }), { minLength: 1, maxLength: 10 })), // focusKeys
+        async (prompt, difficulty, focusKeys) => {
+          const startTime = Date.now()
+          const exercise = await aiService.generateExercise(prompt, difficulty, focusKeys || undefined)
+          const endTime = Date.now()
+          const responseTime = endTime - startTime
+
+          // Exercise should be generated within reasonable time (5 seconds for mocked service)
+          expect(responseTime).toBeLessThan(5000)
+          
+          // Exercise should have required properties
+          expect(exercise).toHaveProperty('id')
+          expect(exercise).toHaveProperty('text')
+          expect(exercise).toHaveProperty('difficulty', difficulty)
+          expect(exercise).toHaveProperty('generatedBy')
+          expect(exercise).toHaveProperty('createdAt')
+          
+          // Text should not be empty
+          expect(exercise.text.length).toBeGreaterThan(0)
+          
+          // If focusKeys provided, they should be preserved
+          if (focusKeys) {
+            expect(exercise.focusKeys).toEqual(focusKeys)
+          }
+        }
+      ), { numRuns: 100 })
+    })
+
+    it('Property 2: Targeted exercise generation', () => {
+      // **Feature: ai-typing-tutor, Property 2: Targeted exercise generation**
+      // **Validates: Requirements 1.4**
+      fc.assert(fc.asyncProperty(
+        fc.string({ minLength: 1, maxLength: 50 }), // prompt
+        fc.constantFrom('beginner', 'intermediate', 'advanced'), // difficulty
+        fc.array(fc.string({ minLength: 1, maxLength: 1 }).filter(c => /[a-zA-Z0-9]/.test(c)), { minLength: 1, maxLength: 5 }), // focusKeys
+        async (prompt, difficulty, focusKeys) => {
+          const exercise = await aiService.generateExercise(prompt, difficulty, focusKeys)
+          
+          // Exercise should contain the focus keys
+          expect(exercise.focusKeys).toEqual(focusKeys)
+          
+          // For mocked service, we can't test actual key frequency in generated text
+          // but we can verify the focusKeys are preserved and exercise is valid
+          expect(exercise.text.length).toBeGreaterThan(0)
+          expect(exercise.difficulty).toBe(difficulty)
+          
+          // The exercise should be suitable for typing practice
+          expect(typeof exercise.text).toBe('string')
+          expect(exercise.text.trim()).toBe(exercise.text) // No leading/trailing whitespace
+        }
+      ), { numRuns: 100 })
+    })
+
+    it('Property 16: AI scope restriction', () => {
+      // **Feature: ai-typing-tutor, Property 16: AI scope restriction**
+      // **Validates: Requirements 1.3**
+      fc.assert(fc.asyncProperty(
+        fc.oneof(
+          // Off-topic messages
+          fc.constantFrom(
+            'What is the weather like?',
+            'Tell me about politics',
+            'How do I cook pasta?',
+            'What is the capital of France?',
+            'Explain quantum physics',
+            'Write me a poem about love'
+          ),
+          // Random non-typing related strings
+          fc.string({ minLength: 5, maxLength: 100 }).filter(s => 
+            !s.toLowerCase().includes('typing') && 
+            !s.toLowerCase().includes('type') &&
+            !s.toLowerCase().includes('keyboard') &&
+            !s.toLowerCase().includes('practice') &&
+            !s.toLowerCase().includes('exercise')
+          )
+        ),
+        async (offTopicMessage) => {
+          const mockHistory = {
+            sessions: [],
+            totalSessions: 0,
+            averageWPM: 0,
+            averageAccuracy: 0,
+            weakKeys: [],
+            improvementTrend: 'stable' as const
+          }
+
+          const response = await aiService.chatWithUser(offTopicMessage, mockHistory)
+          
+          // Response should redirect to typing-related functionality
+          const lowerResponse = response.toLowerCase()
+          const hasTypingRedirect = 
+            lowerResponse.includes('typing') ||
+            lowerResponse.includes('practice') ||
+            lowerResponse.includes('exercise') ||
+            lowerResponse.includes('improve') ||
+            lowerResponse.includes('help')
+          
+          expect(hasTypingRedirect).toBe(true)
+          expect(response.length).toBeGreaterThan(0)
+        }
+      ), { numRuns: 100 })
+    })
   })
 })

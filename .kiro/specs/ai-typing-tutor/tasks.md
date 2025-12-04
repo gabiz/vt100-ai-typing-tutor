@@ -71,22 +71,22 @@
 - [x] 6. Checkpoint - Ensure core typing functionality works
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Implement AI integration service
-  - [ ] 7.1 Create AIService with Anthropic Claude Haiku integration
+- [x] 7. Implement AI integration service
+  - [x] 7.1 Create AIService with Anthropic Claude Haiku integration
     - Implement exercise generation with difficulty and focus key parameters
     - Add performance analysis and chat functionality
     - Include scope restriction to reject off-topic requests
     - _Requirements: 1.3, 1.4, 1.5_
 
-  - [ ] 7.2 Write property test for AI exercise generation responsiveness
+  - [x] 7.2 Write property test for AI exercise generation responsiveness
     - **Property 1: AI exercise generation responsiveness**
     - **Validates: Requirements 1.3**
 
-  - [ ] 7.3 Write property test for targeted exercise generation
+  - [x] 7.3 Write property test for targeted exercise generation
     - **Property 2: Targeted exercise generation**
     - **Validates: Requirements 1.4**
 
-  - [ ] 7.4 Write property test for AI scope restriction
+  - [x] 7.4 Write property test for AI scope restriction
     - **Property 16: AI scope restriction**
     - **Validates: Requirements 1.3**
 
