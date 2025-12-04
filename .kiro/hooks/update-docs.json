@@ -1,0 +1,13 @@
+{
+  "name": "Update Documentation",
+  "description": "Automatically update documentation when source files are modified",
+  "trigger": {
+    "type": "file_save",
+    "filePattern": "**/*.{ts,tsx,js,jsx,md}"
+  },
+  "action": {
+    "type": "message",
+    "message": "A file has been updated. Please review if any documentation needs to be updated to reflect the changes, including README.md, component documentation, or API documentation."
+  },
+  "enabled": true
+}

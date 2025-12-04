@@ -1,0 +1,16 @@
+{
+  "name": "Auto Commit Completed Task",
+  "description": "Automatically commit changes to git when a task is marked as completed",
+  "trigger": {
+    "type": "agent_execution_complete"
+  },
+  "action": {
+    "type": "shell_command",
+    "command": "git add . && git commit -m \"Complete task: $MESSAGE\" || echo \"No changes to commit\"",
+    "workingDirectory": "."
+  },
+  "enabled": true,
+  "conditions": {
+    "messageContains": ["task", "complete", "finished", "done"]
+  }
+}
