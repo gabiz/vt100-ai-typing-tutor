@@ -126,6 +126,39 @@ export interface AudioService {
   setEnabled(enabled: boolean): void;
 }
 
+export interface PerformanceAnalyzer {
+  analyzePerformance(history: PerformanceHistory): PerformanceAnalysis;
+  identifyWeakSpots(history: PerformanceHistory): WeakSpot[];
+  generateAdaptiveExercisePrompt(weakSpots: WeakSpot[], difficulty?: DifficultyLevel): string;
+}
+
+// ============================================================================
+// Performance Analysis Types
+// ============================================================================
+
+export interface WeakSpot {
+  key: string;
+  errorCount: number;
+  errorRate: number;
+  frequency: number;
+}
+
+export interface ImprovementRecommendation {
+  type: 'key_practice' | 'speed_focus' | 'accuracy_focus' | 'general';
+  title: string;
+  description: string;
+  targetKeys?: string[];
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface PerformanceAnalysis {
+  weakSpots: WeakSpot[];
+  recommendations: ImprovementRecommendation[];
+  overallTrend: 'improving' | 'stable' | 'declining';
+  strengthAreas: string[];
+  nextFocusAreas: string[];
+}
+
 // ============================================================================
 // Utility Types
 // ============================================================================
