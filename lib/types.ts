@@ -63,6 +63,8 @@ export interface TerminalInterfaceProps {
 export interface AIChatProps {
   onExerciseGenerated: (exercise: TypingExercise) => void;
   performanceData: PerformanceHistory;
+  onError?: (errorMessage: string) => void;
+  onThinkingChange?: (isThinking: boolean) => void;
 }
 
 export interface ChatMessage {

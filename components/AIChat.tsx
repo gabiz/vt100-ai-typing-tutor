@@ -13,7 +13,9 @@ import { AIServiceImpl } from '@/lib/ai-service';
  */
 export const AIChat: React.FC<AIChatProps> = ({
   onExerciseGenerated,
-  performanceData
+  performanceData,
+  onError,
+  onThinkingChange
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -51,6 +53,11 @@ export const AIChat: React.FC<AIChatProps> = ({
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsThinking(true);
+    
+    // Notify parent of thinking state change
+    if (onThinkingChange) {
+      onThinkingChange(true);
+    }
 
     try {
       // Check if user is requesting an exercise
@@ -90,14 +97,39 @@ export const AIChat: React.FC<AIChatProps> = ({
       }
     } catch (error) {
       console.error('AI chat error:', error);
+      
+      // Determine error type and message
+      let errorMessage = 'Sorry, I encountered an error. Please try again or ask for a typing exercise.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'Network error: Please check your connection and try again.';
+        } else if (error.message.includes('rate limit')) {
+          errorMessage = 'Too many requests. Please wait a moment and try again.';
+        } else if (error.message.includes('timeout')) {
+          errorMessage = 'Request timed out. Please try again.';
+        }
+      }
+      
       const errorResponse: ChatMessage = {
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again or ask for a typing exercise.',
+        content: errorMessage,
         timestamp: new Date()
       };
+      
       setMessages(prev => [...prev, errorResponse]);
+      
+      // Notify parent component of the error
+      if (onError) {
+        onError(errorMessage);
+      }
     } finally {
       setIsThinking(false);
+      
+      // Notify parent of thinking state change
+      if (onThinkingChange) {
+        onThinkingChange(false);
+      }
     }
   };
 

@@ -12,10 +12,10 @@ export class AudioServiceImpl implements AudioService {
   private volume: number = 0.5;
   private correctSoundBuffer: AudioBuffer | null = null;
   private incorrectSoundBuffer: AudioBuffer | null = null;
+  private initialized: boolean = false;
 
   constructor() {
-    this.initializeAudioContext();
-    this.generateSoundBuffers();
+    // Don't initialize immediately - wait for client-side usage
   }
 
   /**
@@ -23,6 +23,11 @@ export class AudioServiceImpl implements AudioService {
    * Handles browser compatibility and user gesture requirements
    */
   private initializeAudioContext(): void {
+    // Only initialize on client side
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     try {
       // Check if Web Audio API is supported
       const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -126,10 +131,23 @@ export class AudioServiceImpl implements AudioService {
   }
 
   /**
+   * Ensure audio service is initialized (lazy initialization)
+   */
+  private ensureInitialized(): void {
+    if (!this.initialized && typeof window !== 'undefined') {
+      this.initializeAudioContext();
+      this.generateSoundBuffers();
+      this.initialized = true;
+    }
+  }
+
+  /**
    * Play typing sound effect based on keystroke correctness
    * @param isCorrect - Whether the typed character was correct
    */
   public playTypingSound(isCorrect: boolean): void {
+    this.ensureInitialized();
+    
     if (!this.enabled || !this.audioContext) {
       return;
     }
@@ -212,6 +230,7 @@ export class AudioServiceImpl implements AudioService {
    * Check if audio is supported and available
    */
   public isAudioSupported(): boolean {
+    this.ensureInitialized();
     return this.audioContext !== null;
   }
 

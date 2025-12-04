@@ -45,19 +45,28 @@ export default function Home() {
   const [isPaused, setIsPaused] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState<TypingStatus>('READY');
   const [showHistory, setShowHistory] = useState(false);
+  
+  // Error and loading states
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Services
   const storageService = useMemo(() => new StorageServiceImpl(), []);
 
   // Load performance history on mount
   useEffect(() => {
-    const loadHistory = () => {
+    const loadHistory = async () => {
       try {
+        setIsLoading(true);
+        setError(null);
+        
         const history = storageService.getSessionHistory();
         setPerformanceHistory(history);
       } catch (error) {
         console.error('Failed to load performance history:', error);
-        // Initialize empty history
+        setError('Failed to load performance history. Using default settings.');
+        
+        // Initialize empty history as fallback
         setPerformanceHistory({
           sessions: [],
           totalSessions: 0,
@@ -66,6 +75,8 @@ export default function Home() {
           weakKeys: [],
           improvementTrend: 'stable'
         });
+      } finally {
+        setIsLoading(false);
       }
     };
     
@@ -84,37 +95,52 @@ export default function Home() {
 
   // Session lifecycle management
   const startSession = useCallback(() => {
-    if (!currentExercise) return;
+    try {
+      if (!currentExercise) {
+        setError('No exercise available. Please generate a new exercise first.');
+        return;
+      }
 
-    const newSession: SessionData = {
-      id: `session-${Date.now()}`,
-      exerciseId: currentExercise.id,
-      startTime: new Date(),
-      metrics: {
-        wpm: 0,
-        accuracy: 100,
-        errorCount: 0,
-        charactersTyped: 0,
-        timeElapsed: 0,
-        keyErrorMap: {}
-      },
-      completed: false
-    };
+      if (!currentExercise.text || currentExercise.text.trim().length === 0) {
+        setError('Invalid exercise text. Please generate a new exercise.');
+        return;
+      }
 
-    setCurrentSession(newSession);
-    setIsTypingActive(true);
-    setIsPaused(false);
-    setTerminalStatus('TYPING');
-    
-    // Reset typing progress
-    setTypingProgress({
-      currentPosition: 0,
-      correctChars: 0,
-      incorrectChars: 0,
-      timeElapsed: 0
-    });
+      setError(null); // Clear any previous errors
 
-    typingEngine.reset();
+      const newSession: SessionData = {
+        id: `session-${Date.now()}`,
+        exerciseId: currentExercise.id,
+        startTime: new Date(),
+        metrics: {
+          wpm: 0,
+          accuracy: 100,
+          errorCount: 0,
+          charactersTyped: 0,
+          timeElapsed: 0,
+          keyErrorMap: {}
+        },
+        completed: false
+      };
+
+      setCurrentSession(newSession);
+      setIsTypingActive(true);
+      setIsPaused(false);
+      setTerminalStatus('TYPING');
+      
+      // Reset typing progress
+      setTypingProgress({
+        currentPosition: 0,
+        correctChars: 0,
+        incorrectChars: 0,
+        timeElapsed: 0
+      });
+
+      typingEngine.reset();
+    } catch (error) {
+      console.error('Failed to start session:', error);
+      setError('Failed to start typing session. Please try again.');
+    }
   }, [currentExercise, typingEngine]);
 
   const stopSession = useCallback(() => {
@@ -140,19 +166,22 @@ export default function Home() {
   }, [typingEngine]);
 
   const completeSession = useCallback(() => {
-    if (!currentSession || !currentExercise) return;
-
-    const completedSession: SessionData = {
-      ...currentSession,
-      endTime: new Date(),
-      completed: true,
-      metrics: {
-        ...currentSession.metrics,
-        timeElapsed: typingProgress.timeElapsed
-      }
-    };
+    if (!currentSession || !currentExercise) {
+      setError('Cannot complete session: missing session or exercise data.');
+      return;
+    }
 
     try {
+      const completedSession: SessionData = {
+        ...currentSession,
+        endTime: new Date(),
+        completed: true,
+        metrics: {
+          ...currentSession.metrics,
+          timeElapsed: typingProgress.timeElapsed
+        }
+      };
+
       // Save session to storage
       storageService.saveSession(completedSession);
       
@@ -165,51 +194,95 @@ export default function Home() {
       setIsTypingActive(false);
       setIsPaused(false);
       setTerminalStatus('READY');
+      setError(null); // Clear any errors on successful completion
       
     } catch (error) {
       console.error('Failed to save session:', error);
+      setError('Failed to save session data. Your progress may not be saved.');
+      
+      // Still reset the session state even if saving failed
+      setCurrentSession(null);
+      setIsTypingActive(false);
+      setIsPaused(false);
+      setTerminalStatus('READY');
     }
   }, [currentSession, currentExercise, typingProgress.timeElapsed, storageService]);
 
   // Handle typing progress updates
   const handleTypingProgress = useCallback((progress: TypingProgress) => {
-    setTypingProgress(progress);
-    
-    if (!currentSession || !currentExercise) return;
-
-    // Calculate real-time metrics
-    const wpm = progress.timeElapsed > 0 ? 
-      Math.round((progress.correctChars / 5) / (progress.timeElapsed / 60)) : 0;
-    
-    const totalChars = progress.correctChars + progress.incorrectChars;
-    const accuracy = totalChars > 0 ? 
-      Math.round((progress.correctChars / totalChars) * 100) : 100;
-
-    // Update session metrics
-    const updatedSession: SessionData = {
-      ...currentSession,
-      metrics: {
-        ...currentSession.metrics,
-        wpm,
-        accuracy,
-        errorCount: progress.incorrectChars,
-        charactersTyped: totalChars,
-        timeElapsed: progress.timeElapsed
+    try {
+      // Validate progress data
+      if (!progress || typeof progress !== 'object') {
+        console.warn('Invalid progress data received');
+        return;
       }
-    };
 
-    setCurrentSession(updatedSession);
+      // Ensure all progress values are valid numbers
+      const validatedProgress = {
+        currentPosition: Math.max(0, progress.currentPosition || 0),
+        correctChars: Math.max(0, progress.correctChars || 0),
+        incorrectChars: Math.max(0, progress.incorrectChars || 0),
+        timeElapsed: Math.max(0, progress.timeElapsed || 0)
+      };
 
-    // Check if exercise is completed
-    if (progress.currentPosition >= currentExercise.text.length) {
-      completeSession();
+      setTypingProgress(validatedProgress);
+      
+      if (!currentSession || !currentExercise) return;
+
+      // Calculate real-time metrics with validation
+      const wpm = validatedProgress.timeElapsed > 0 ? 
+        Math.round((validatedProgress.correctChars / 5) / (validatedProgress.timeElapsed / 60)) : 0;
+      
+      const totalChars = validatedProgress.correctChars + validatedProgress.incorrectChars;
+      const accuracy = totalChars > 0 ? 
+        Math.round((validatedProgress.correctChars / totalChars) * 100) : 100;
+
+      // Ensure metrics are within valid ranges
+      const validatedMetrics = {
+        wpm: Math.max(0, Math.min(1000, wpm)), // Cap WPM at reasonable maximum
+        accuracy: Math.max(0, Math.min(100, accuracy)), // Ensure accuracy is 0-100%
+        errorCount: validatedProgress.incorrectChars,
+        charactersTyped: totalChars,
+        timeElapsed: validatedProgress.timeElapsed
+      };
+
+      // Update session metrics
+      const updatedSession: SessionData = {
+        ...currentSession,
+        metrics: {
+          ...currentSession.metrics,
+          ...validatedMetrics,
+          keyErrorMap: currentSession.metrics.keyErrorMap || {}
+        }
+      };
+
+      setCurrentSession(updatedSession);
+
+      // Check if exercise is completed
+      if (validatedProgress.currentPosition >= currentExercise.text.length) {
+        completeSession();
+      }
+    } catch (error) {
+      console.error('Error handling typing progress:', error);
+      setError('Error updating typing progress. Please restart the session.');
     }
   }, [currentSession, currentExercise, completeSession]);
 
   // Handle new exercise generation
   const handleExerciseGenerated = useCallback((exercise: TypingExercise) => {
-    setCurrentExercise(exercise);
-    resetSession();
+    try {
+      if (!exercise || !exercise.text || exercise.text.trim().length === 0) {
+        setError('Generated exercise is invalid. Please try again.');
+        return;
+      }
+      
+      setCurrentExercise(exercise);
+      resetSession();
+      setError(null); // Clear any previous errors
+    } catch (error) {
+      console.error('Failed to set new exercise:', error);
+      setError('Failed to load new exercise. Please try again.');
+    }
   }, [resetSession]);
 
   // Handle new text request
@@ -224,10 +297,38 @@ export default function Home() {
       storageService.clearHistory();
       const emptyHistory = storageService.getSessionHistory();
       setPerformanceHistory(emptyHistory);
+      setError(null); // Clear any errors
     } catch (error) {
       console.error('Failed to clear history:', error);
+      setError('Failed to clear history. Please try again.');
     }
   }, [storageService]);
+
+  // Handle AI service errors
+  const handleAIError = useCallback((errorMessage: string) => {
+    setError(`AI Service Error: ${errorMessage}`);
+    setTerminalStatus('READY');
+  }, []);
+
+  // Handle AI thinking state
+  const handleAIThinking = useCallback((isThinking: boolean) => {
+    if (isThinking) {
+      setTerminalStatus('AI THINKING');
+    } else if (!isTypingActive) {
+      setTerminalStatus('READY');
+    }
+  }, [isTypingActive]);
+
+  // Clear error after a timeout
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 5000); // Clear error after 5 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   // Current metrics for display
   const currentMetrics = currentSession?.metrics || {
@@ -247,21 +348,52 @@ export default function Home() {
           status={terminalStatus}
         >
           <div className="space-y-6">
+            {/* Error Display */}
+            {error && (
+              <div className="border border-red-400 bg-red-400/10 rounded p-3 text-red-400 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono">ERROR:</span>
+                  <span>{error}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Loading Indicator */}
+            {isLoading && (
+              <div className="border border-yellow-400 bg-yellow-400/10 rounded p-3 text-yellow-400 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="animate-spin">⟳</span>
+                  <span>Loading...</span>
+                </div>
+              </div>
+            )}
+
             {/* AI Chat Area */}
             {performanceHistory && (
               <AIChat 
                 onExerciseGenerated={handleExerciseGenerated}
                 performanceData={performanceHistory}
+                onError={handleAIError}
+                onThinkingChange={handleAIThinking}
               />
             )}
 
             {/* Typing Exercise Area */}
-            {currentExercise && (
+            {currentExercise ? (
               <TypingArea 
                 exercise={currentExercise}
                 onProgress={handleTypingProgress}
                 isActive={isTypingActive}
               />
+            ) : (
+              <div className="border border-[#00ff00]/30 rounded p-6 text-center">
+                <div className="text-[#00ff00]/60 mb-4">
+                  No exercise loaded. Please generate a new exercise using the AI chat above.
+                </div>
+                <div className="text-[#00ff00]/40 text-sm">
+                  Try typing: &quot;Give me a typing challenge&quot; or &quot;Practice basic keys&quot;
+                </div>
+              </div>
             )}
 
             {/* Control Buttons */}
