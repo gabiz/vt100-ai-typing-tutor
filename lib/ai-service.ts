@@ -3,7 +3,9 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { 
   TypingExercise, 
   PerformanceHistory, 
-  DifficultyLevel
+  DifficultyLevel,
+  StructuredAIResponse,
+  ChatMessage
 } from './types'
 
 export class AIServiceImpl {
@@ -133,6 +135,92 @@ export class AIServiceImpl {
     } catch (error) {
       console.error('Performance analysis failed:', error)
       return 'Keep practicing! Focus on accuracy first, then speed will follow naturally.'
+    }
+  }
+
+  /**
+   * Enhanced chat method with comprehensive prompting and structured JSON responses
+   * Implements requirements 1.1, 1.2, 4.1, 4.2 for intelligent intent detection
+   */
+  async chatWithUserEnhanced(
+    message: string,
+    context: PerformanceHistory,
+    conversationHistory: ChatMessage[] = [],
+    lastSessionErrors?: {
+      keyErrorMap: Record<string, number>;
+      detailedErrors: Array<{
+        position: number;
+        expected: string;
+        typed: string;
+        timestamp: number;
+      }>;
+    }
+  ): Promise<StructuredAIResponse> {
+    try {
+      // Create comprehensive system prompt for intent detection and response generation
+      const systemPrompt = `You are an AI typing tutor assistant. You must respond with valid JSON containing exactly these fields:
+{
+  "intent": "chitchat" | "session-analysis" | "session-suggest",
+  "typing-text": string | null,
+  "response": string
+}
+
+INTENT CLASSIFICATION RULES:
+- "chitchat": Off-topic questions, general conversation, non-typing related queries
+- "session-analysis": Requests for performance analysis, feedback on typing sessions, improvement suggestions
+- "session-suggest": Requests for typing exercises, practice text, challenges, specific key drills
+
+TYPING TEXT GENERATION RULES:
+- Only generate typing-text for "session-suggest" intent
+- For chitchat and session-analysis, set typing-text to null
+- Word count: EXACTLY as requested by user, or 30-40 words if not specified
+- Key drills: Use ONLY the specified keys plus spaces (e.g., "asaa dass dsdsd" for a,s,d keys)
+- Regular exercises: Use standard keyboard characters only
+- Validate word count precision - count every word carefully
+
+RESPONSE GUIDELINES:
+- Chitchat: Politely redirect to typing practice, suggest specific exercises
+- Session-analysis: Provide specific, actionable feedback based on performance data
+- Session-suggest: Explain the exercise and encourage practice
+
+CRITICAL: Always return valid JSON. Do not include any text outside the JSON structure.`;
+
+      // Format conversation history for context
+      const conversationContext = this.formatConversationHistory(conversationHistory);
+
+      // Format performance context
+      const performanceContext = this.formatPerformanceContext(context, lastSessionErrors);
+
+      // Create comprehensive user prompt with all context
+      const userPrompt = `CONVERSATION HISTORY:
+${conversationContext}
+
+PERFORMANCE CONTEXT:
+${performanceContext}
+
+USER MESSAGE: ${message}
+
+Respond with valid JSON following the exact format specified in the system prompt.`;
+
+      const { text } = await generateText({
+        model: this.model,
+        system: systemPrompt,
+        prompt: userPrompt,
+      });
+
+      // Parse and validate JSON response
+      const parsedResponse = this.parseAndValidateResponse(text);
+      return parsedResponse;
+
+    } catch (error) {
+      console.error('Enhanced chat response failed:', error);
+      
+      // Fallback to structured error response
+      return {
+        intent: 'chitchat',
+        'typing-text': null,
+        response: "I'm having trouble processing your request right now. Try asking for a typing exercise or practice suggestion!"
+      };
     }
   }
 
@@ -435,6 +523,137 @@ export class AIServiceImpl {
     } catch (error) {
       console.error('Session analysis failed:', error)
       return `Session complete! ${sessionData.wpm} WPM at ${sessionData.accuracy.toFixed(1)}% accuracy. ${sessionData.errorCount > 5 ? 'Focus on accuracy in your next session.' : 'Great job! Keep practicing to improve speed.'}`
+    }
+  }
+
+  /**
+   * Formats conversation history for AI context
+   * Implements requirements 8.1, 8.4 for conversation context management
+   */
+  private formatConversationHistory(conversationHistory: ChatMessage[]): string {
+    if (conversationHistory.length === 0) {
+      return 'No previous conversation history.';
+    }
+
+    // Include last 5 messages for context
+    const recentMessages = conversationHistory.slice(-5);
+    
+    return recentMessages
+      .map(msg => `${msg.role.toUpperCase()}: ${msg.content}`)
+      .join('\n');
+  }
+
+  /**
+   * Formats performance context for AI prompting
+   * Includes performance data and session errors for analysis
+   */
+  private formatPerformanceContext(
+    context: PerformanceHistory,
+    lastSessionErrors?: {
+      keyErrorMap: Record<string, number>;
+      detailedErrors: Array<{
+        position: number;
+        expected: string;
+        typed: string;
+        timestamp: number;
+      }>;
+    }
+  ): string {
+    let performanceInfo = context.totalSessions > 0 
+      ? `User has completed ${context.totalSessions} sessions with ${context.averageWPM} WPM average and ${context.averageAccuracy}% accuracy. Improvement trend: ${context.improvementTrend}.`
+      : 'New user with no typing history.';
+
+    if (context.weakKeys.length > 0) {
+      performanceInfo += ` Historically weak keys: ${context.weakKeys.join(', ')}.`;
+    }
+
+    // Add last session error information if available
+    if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
+      const problemKeys = Object.entries(lastSessionErrors.keyErrorMap)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5)
+        .map(([key, count]) => `${key} (${count} errors)`);
+      
+      performanceInfo += ` Last session problematic keys: ${problemKeys.join(', ')}.`;
+      
+      if (lastSessionErrors.detailedErrors.length > 0) {
+        const commonMistakes = lastSessionErrors.detailedErrors
+          .reduce((acc, error) => {
+            const mistake = `'${error.expected}' → '${error.typed}'`;
+            acc[mistake] = (acc[mistake] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+
+        const topMistakes = Object.entries(commonMistakes)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 3)
+          .map(([mistake, count]) => `${mistake} (${count}x)`);
+
+        if (topMistakes.length > 0) {
+          performanceInfo += ` Common typing mistakes: ${topMistakes.join(', ')}.`;
+        }
+      }
+    }
+
+    return performanceInfo;
+  }
+
+  /**
+   * Parses and validates AI response JSON
+   * Implements requirements 4.1, 4.5 for JSON parsing and validation
+   */
+  private parseAndValidateResponse(responseText: string): StructuredAIResponse {
+    try {
+      // Clean the response text to extract JSON
+      const cleanedText = responseText.trim();
+      
+      // Try to find JSON in the response
+      const jsonStart = cleanedText.indexOf('{');
+      const jsonEnd = cleanedText.lastIndexOf('}');
+      
+      if (jsonStart === -1 || jsonEnd === -1) {
+        throw new Error('No JSON found in response');
+      }
+      
+      const jsonText = cleanedText.substring(jsonStart, jsonEnd + 1);
+      const parsed = JSON.parse(jsonText);
+
+      // Validate required fields
+      if (!parsed.intent || !parsed.response) {
+        throw new Error('Missing required fields in JSON response');
+      }
+
+      // Validate intent value
+      const validIntents = ['chitchat', 'session-analysis', 'session-suggest'];
+      if (!validIntents.includes(parsed.intent)) {
+        throw new Error(`Invalid intent: ${parsed.intent}`);
+      }
+
+      // Validate typing-text field consistency
+      if (parsed.intent === 'session-suggest' && !parsed['typing-text']) {
+        console.warn('session-suggest intent should have typing-text, but it is null');
+      }
+      
+      if ((parsed.intent === 'chitchat' || parsed.intent === 'session-analysis') && parsed['typing-text']) {
+        console.warn(`${parsed.intent} intent should have null typing-text, but it has content`);
+        parsed['typing-text'] = null; // Force consistency
+      }
+
+      return {
+        intent: parsed.intent,
+        'typing-text': parsed['typing-text'] || null,
+        response: parsed.response
+      };
+
+    } catch (error) {
+      console.error('JSON parsing failed:', error);
+      
+      // Return fallback response with retry suggestion
+      return {
+        intent: 'chitchat',
+        'typing-text': null,
+        response: "I had trouble understanding your request. Could you please rephrase it? Try asking for a typing exercise, performance analysis, or practice suggestions."
+      };
     }
   }
 
