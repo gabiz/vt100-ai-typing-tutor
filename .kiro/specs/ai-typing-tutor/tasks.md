@@ -68,7 +68,7 @@
     - **Property 6: Audio feedback consistency**
     - **Validates: Requirements 2.4**
 
-- [ ] 6. Checkpoint - Ensure core typing functionality works
+- [x] 6. Checkpoint - Ensure core typing functionality works
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. Implement AI integration service
