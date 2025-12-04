@@ -6,11 +6,11 @@
   },
   "action": {
     "type": "shell_command",
-    "command": "git add . && git commit -m \"Complete task: $MESSAGE\" || echo \"No changes to commit\"",
+    "command": "git add . && git commit -m \"Auto-commit: Task completed\" || echo \"No changes to commit\"",
     "workingDirectory": "."
   },
   "enabled": true,
   "conditions": {
-    "messageContains": ["task", "complete", "finished", "done"]
+    "messageContains": ["complete", "completed", "finished", "done", "✅"]
   }
 }

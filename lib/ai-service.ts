@@ -1,41 +1,12 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { 
+  TypingExercise, 
+  PerformanceHistory, 
+  DifficultyLevel
+} from './types'
 
-export interface TypingExercise {
-  id: string
-  text: string
-  difficulty: 'beginner' | 'intermediate' | 'advanced'
-  focusKeys?: string[]
-  generatedBy: 'ai' | 'preset'
-  createdAt: Date
-}
-
-export interface SessionData {
-  id: string
-  exerciseId: string
-  startTime: Date
-  endTime?: Date
-  metrics: {
-    wpm: number
-    accuracy: number
-    errorCount: number
-    charactersTyped: number
-    timeElapsed: number
-    keyErrorMap: Record<string, number>
-  }
-  completed: boolean
-}
-
-export interface PerformanceHistory {
-  sessions: SessionData[]
-  totalSessions: number
-  averageWPM: number
-  averageAccuracy: number
-  weakKeys: string[]
-  improvementTrend: 'improving' | 'stable' | 'declining'
-}
-
-export class AIService {
+export class AIServiceImpl {
   private model = anthropic('claude-3-haiku-20240307')
 
   async generateExercise(
@@ -76,7 +47,7 @@ export class AIService {
       return {
         id: crypto.randomUUID(),
         text: text.trim(),
-        difficulty: difficulty as 'beginner' | 'intermediate' | 'advanced',
+        difficulty: difficulty as DifficultyLevel,
         focusKeys,
         generatedBy: 'ai',
         createdAt: new Date()
@@ -189,7 +160,7 @@ export class AIService {
     return {
       id: crypto.randomUUID(),
       text,
-      difficulty: difficulty as 'beginner' | 'intermediate' | 'advanced',
+      difficulty: difficulty as DifficultyLevel,
       focusKeys,
       generatedBy: 'preset',
       createdAt: new Date()

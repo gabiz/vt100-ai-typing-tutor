@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AIService } from '@/lib/ai-service'
+import { AIServiceImpl } from '@/lib/ai-service'
 
-const aiService = new AIService()
+const aiService = new AIServiceImpl()
 
 export async function POST(request: NextRequest) {
   try {

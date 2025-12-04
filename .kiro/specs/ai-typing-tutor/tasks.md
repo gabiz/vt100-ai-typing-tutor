@@ -6,13 +6,13 @@
   - Configure Jest and React Testing Library for unit testing
   - _Requirements: 7.3_
 
-- [ ] 2. Create core data models and types
-  - [ ] 2.1 Define TypeScript interfaces for all data models
+- [x] 2. Create core data models and types
+  - [x] 2.1 Define TypeScript interfaces for all data models
     - Create TypingExercise, PerformanceMetrics, SessionData, and PerformanceHistory interfaces
     - Define service interfaces for AIService, StorageService, and AudioService
     - _Requirements: 5.2, 7.2_
 
-  - [ ] 2.2 Write property test for data persistence round trip
+  - [x] 2.2 Write property test for data persistence round trip
     - **Property 13: Data persistence round trip**
     - **Validates: Requirements 5.2**
 

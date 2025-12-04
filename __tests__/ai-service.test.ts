@@ -2,7 +2,7 @@
  * AI Service basic functionality tests
  */
 
-import { AIService } from '../lib/ai-service'
+import { AIServiceImpl } from '../lib/ai-service'
 
 // Mock the AI SDK to avoid making real API calls in tests
 jest.mock('ai', () => ({
@@ -16,14 +16,14 @@ jest.mock('@ai-sdk/anthropic', () => ({
 }))
 
 describe('AIService', () => {
-  let aiService: AIService
+  let aiService: AIServiceImpl
 
   beforeEach(() => {
-    aiService = new AIService()
+    aiService = new AIServiceImpl()
   })
 
   it('should create an instance', () => {
-    expect(aiService).toBeInstanceOf(AIService)
+    expect(aiService).toBeInstanceOf(AIServiceImpl)
   })
 
   it('should generate a typing exercise with fallback', async () => {
