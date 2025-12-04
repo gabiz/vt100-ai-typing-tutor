@@ -27,34 +27,34 @@
     - Test data validation and error handling
     - _Requirements: 5.1, 5.2_
 
-- [-] 4. Build typing engine core functionality
+- [x] 4. Build typing engine core functionality
   - [x] 4.1 Implement TypingEngine class with cursor management
     - Create character-by-character input processing
     - Implement cursor advancement logic for correct/incorrect input
     - Add real-time performance metrics calculation
     - _Requirements: 2.2, 2.3, 3.5, 4.1, 4.2, 4.3, 4.4, 4.5_
 
-  - [ ] 4.2 Write property test for correct character feedback
+  - [x] 4.2 Write property test for correct character feedback
     - **Property 4: Correct character feedback**
     - **Validates: Requirements 2.2**
 
-  - [ ] 4.3 Write property test for incorrect character feedback
+  - [x] 4.3 Write property test for incorrect character feedback
     - **Property 5: Incorrect character feedback**
     - **Validates: Requirements 2.3**
 
-  - [ ] 4.4 Write property test for WPM calculation accuracy
+  - [x] 4.4 Write property test for WPM calculation accuracy
     - **Property 8: WPM calculation accuracy**
     - **Validates: Requirements 4.1**
 
-  - [ ] 4.5 Write property test for accuracy calculation precision
+  - [x] 4.5 Write property test for accuracy calculation precision
     - **Property 9: Accuracy calculation precision**
     - **Validates: Requirements 4.2**
 
-  - [ ] 4.6 Write property test for error count reliability
+  - [x] 4.6 Write property test for error count reliability
     - **Property 10: Error count reliability**
     - **Validates: Requirements 4.3**
 
-  - [ ] 4.7 Write property test for character count precision
+  - [x] 4.7 Write property test for character count precision
     - **Property 12: Character count precision**
     - **Validates: Requirements 4.5**
 
