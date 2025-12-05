@@ -88,6 +88,8 @@ export default function Home() {
     loadHistory();
   }, [storageService]);
 
+
+
   // Monitor currentExercise changes for debugging if needed
 
 
@@ -384,6 +386,39 @@ export default function Home() {
       setTerminalStatus('READY');
     }
   }, [isTypingActive]);
+
+  // Keyboard shortcuts for session controls when not actively typing
+  useEffect(() => {
+    const handleKeyPress = (event: KeyboardEvent) => {
+      // Only handle shortcuts when not actively typing and not in input fields
+      if (isTypingActive || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Prevent shortcuts when modifiers are pressed
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        return;
+      }
+
+      switch (event.key.toLowerCase()) {
+        case 's':
+          if (currentExercise && !isTypingActive) {
+            event.preventDefault();
+            startSession();
+          }
+          break;
+        case 'r':
+          if (!isTypingActive) {
+            event.preventDefault();
+            resetSession();
+          }
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, [isTypingActive, currentExercise, startSession, resetSession]);
 
   // Clear error after a timeout
   useEffect(() => {

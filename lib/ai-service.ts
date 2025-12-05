@@ -13,7 +13,7 @@ export class AIServiceImpl {
   private anthropicClient = createAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
   })
-  private model = this.anthropicClient('claude-4-haiku-latest')
+  private model = this.anthropicClient('claude-sonnet-4-20250514')
   
   // API failure tracking for graceful degradation
   private apiFailureCount = 0
@@ -532,12 +532,14 @@ THEME HANDLING RULES (HIGH PRIORITY):
 KEY DRILL GENERATION RULES (HIGHEST PRIORITY):
 - DETECT key drill requests: "drill", "practice keys", "key exercise", "drill with [letters]"
 - When ANY drill is requested, classify intent as "session-suggest"
-- EXTRACT the specific keys from the user message (e.g., "a s d f" from "drill with a s d f")
+- EXTRACT the specific keys from the user message (e.g., "g o d" from "drill with g o d")
 - Use ONLY the specified keys plus spaces - ABSOLUTELY NO OTHER CHARACTERS
 - Generate ONLY drill patterns like: "aaa sss ddd", "asa dad sas", "asad sdas"
 - NEVER generate normal sentences or words for drill requests
-- Example for "drill with a s d": typing-text should be "aaa sss ddd asa dad sas asad sdas"
+- Example1 for "drill with a s d 5 words long": typing-text can be "aa sss dddd asa dad"
+- Example2 for "drill with g o d 4 words long": typing-text can be "god gog odo dgod"
 - CRITICAL: If user says "drill", the typing-text MUST be drill patterns, NOT sentences
+- CRITICAL: The text pattern in "typing-text" should match what it is described in "response".
 
 RESPONSE GUIDELINES FOR EACH INTENT:
 
@@ -560,8 +562,8 @@ SESSION-ANALYSIS RESPONSES:
 SESSION-SUGGEST RESPONSES:
 - Keep responses SHORT and encouraging (1-2 sentences maximum)
 - For drills: "Here's a drill for [keys]. Focus on accuracy!"
-- For exercises: "Here's a [X]-word exercise. Take your time!"
-- Examples: "Here's your drill for a, s, d keys. Focus on smooth finger movements!"
+- For exercises: "Here's a [X] word exercise. Take your time!"
+- Examples: "Here's your drill for keys [key1] [key2] [key3]. Focus on smooth finger movements!"
 
 CRITICAL: Always return valid JSON. Do not include any text outside the JSON structure.`;
   }
@@ -593,7 +595,7 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
         return this.handleSessionAnalysisResponse(response, context, lastSessionErrors);
       
       case 'session-suggest':
-        return this.handleSessionSuggestResponse(response, originalMessage);
+        return this.handleSessionSuggestResponse(response);
       
       default:
         // Fallback for invalid intent
@@ -757,62 +759,12 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   /**
    * Handles session-suggest intent responses with typing exercise generation
    * Implements requirement 1.5 for session-suggest response with typing exercise generation
-   * Implements requirements 3.2, 3.3, 3.4 for key drill text generation
+   * Currently passes through the response as-is since validation is handled elsewhere
    */
   private handleSessionSuggestResponse(
-    response: StructuredAIResponse, 
-    originalMessage: string
+    response: StructuredAIResponse
   ): StructuredAIResponse {
-    // Check if this is a key drill request and validate accordingly
-    const isKeyDrillRequest = this.isKeyDrillRequest(originalMessage);
-    if (isKeyDrillRequest) {
-      return this.validateKeyDrillResponse(response, originalMessage);
-    }
-
-    // Validate that typing-text is provided for session-suggest
-    if (!response['typing-text']) {
-      console.warn('🔍 DEBUG: No typing-text provided by AI, generating fallback');
-      // Generate fallback typing text if missing using enhanced extraction
-      const wordCount = this.extractWordCount(originalMessage) || this.getDefaultWordCount();
-      const fallbackText = this.generateFallbackTypingText(wordCount, originalMessage);
-      
-      return {
-        intent: 'session-suggest',
-        'typing-text': fallbackText,
-        response: `${response.response} Here's a ${wordCount}-word exercise for you to practice.`
-      };
-    }
-
-    console.log('🔍 DEBUG: AI provided typing-text:', {
-      length: response['typing-text'].length,
-      preview: response['typing-text'].substring(0, 100) + '...'
-    });
-
-    // Enhanced word count validation using new validation method
-    const requestedWordCount = this.extractWordCount(originalMessage);
-    if (requestedWordCount && response['typing-text']) {
-      const validation = this.validateWordCount(response['typing-text'], requestedWordCount);
-      
-      console.log('🔍 DEBUG: Word count validation:', {
-        requestedWordCount,
-        actualWordCount: validation.actualCount,
-        isValid: validation.isValid,
-        message: validation.message,
-        originalTypingText: response['typing-text']?.substring(0, 100) + '...'
-      });
-      
-      if (!validation.isValid) {
-        console.warn('🔍 DEBUG: Word count validation failed, using fallback text');
-        // Generate corrected typing text using enhanced fallback
-        const correctedText = this.generateFallbackTypingText(requestedWordCount, originalMessage);
-        return {
-          intent: 'session-suggest',
-          'typing-text': correctedText,
-          response: `Here's a ${requestedWordCount}-word exercise as requested. ${response.response}`
-        };
-      }
-    }
-
+    // For now, just pass through the response as validation is handled in other parts of the system
     return response;
   }
 

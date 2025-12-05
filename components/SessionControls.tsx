@@ -95,62 +95,75 @@ export const SessionControls: React.FC<SessionControlsProps> = ({
   const resetButton = getResetButtonState();
 
   return (
-    <div className="flex gap-4 justify-center items-center">
-      {/* Start/Resume Button - Requirement 3.1 */}
-      <button
-        onClick={handleStart}
-        disabled={!startButton.enabled}
-        className={getButtonClass(startButton.enabled, startButton.isPrimary)}
-        title={
-          isActive 
-            ? "Session is currently running" 
-            : isPaused 
-              ? "Resume the paused session" 
-              : "Start the typing session"
-        }
-      >
-        {startButton.label}
-      </button>
+    <div className="space-y-2">
+      <div className="flex gap-4 justify-center items-center">
+        {/* Start/Resume Button - Requirement 3.1 */}
+        <button
+          onClick={handleStart}
+          disabled={!startButton.enabled}
+          className={getButtonClass(startButton.enabled, startButton.isPrimary)}
+          title={
+            isActive 
+              ? "Session is currently running" 
+              : isPaused 
+                ? "Resume the paused session (or press 'S')" 
+                : "Start the typing session (or press 'S')"
+          }
+        >
+          {startButton.label}
+          {!isActive && (
+            <span className="ml-1 text-xs opacity-60">(S)</span>
+          )}
+        </button>
 
-      {/* Stop Button - Requirement 3.2 */}
-      <button
-        onClick={handleStop}
-        disabled={!stopButton.enabled}
-        className={getButtonClass(stopButton.enabled, stopButton.isPrimary)}
-        title={
-          isActive 
-            ? "Pause the current session" 
-            : "No active session to stop"
-        }
-      >
-        {stopButton.label}
-      </button>
+        {/* Stop Button - Requirement 3.2 */}
+        <button
+          onClick={handleStop}
+          disabled={!stopButton.enabled}
+          className={getButtonClass(stopButton.enabled, stopButton.isPrimary)}
+          title={
+            isActive 
+              ? "Pause the current session" 
+              : "No active session to stop"
+          }
+        >
+          {stopButton.label}
+        </button>
 
-      {/* Reset Button - Requirement 3.3 */}
-      <button
-        onClick={handleReset}
-        disabled={!resetButton.enabled}
-        className={getButtonClass(resetButton.enabled, resetButton.isPrimary)}
-        title="Reset the current exercise and clear all progress"
-      >
-        {resetButton.label}
-      </button>
+        {/* Reset Button - Requirement 3.3 */}
+        <button
+          onClick={handleReset}
+          disabled={!resetButton.enabled}
+          className={getButtonClass(resetButton.enabled, resetButton.isPrimary)}
+          title="Reset the current exercise and clear all progress (or press 'R')"
+        >
+          {resetButton.label}
+          {!isActive && (
+            <span className="ml-1 text-xs opacity-60">(R)</span>
+          )}
+        </button>
 
-
-
-      {/* Status Indicator */}
-      <div className="ml-4 flex items-center gap-2 text-xs text-[#00ff00]/60">
-        <div className={`w-2 h-2 rounded-full ${
-          isActive 
-            ? 'bg-green-400 animate-pulse' 
-            : isPaused 
-              ? 'bg-yellow-400' 
-              : 'bg-[#00ff00]/40'
-        }`}></div>
-        <span className="font-mono">
-          {isActive ? 'ACTIVE' : isPaused ? 'PAUSED' : 'READY'}
-        </span>
+        {/* Status Indicator */}
+        <div className="ml-4 flex items-center gap-2 text-xs text-[#00ff00]/60">
+          <div className={`w-2 h-2 rounded-full ${
+            isActive 
+              ? 'bg-green-400 animate-pulse' 
+              : isPaused 
+                ? 'bg-yellow-400' 
+                : 'bg-[#00ff00]/40'
+          }`}></div>
+          <span className="font-mono">
+            {isActive ? 'ACTIVE' : isPaused ? 'PAUSED' : 'READY'}
+          </span>
+        </div>
       </div>
+      
+      {/* Keyboard Shortcuts Hint - Only show when not actively typing */}
+      {!isActive && (
+        <div className="text-center text-xs text-[#00ff00]/40 font-mono">
+          Keyboard shortcuts: <span className="text-[#00ff00]/60">S</span> = Start, <span className="text-[#00ff00]/60">R</span> = Reset
+        </div>
+      )}
     </div>
   );
 };
