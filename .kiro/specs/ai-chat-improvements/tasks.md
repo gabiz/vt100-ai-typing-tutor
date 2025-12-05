@@ -120,7 +120,7 @@
     - Handle message display and formatting
     - _Requirements: 8.1, 8.2_
 
-- [ ] 10. Checkpoint - Ensure all tests pass
+- [x] 10. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. Integration testing and validation
