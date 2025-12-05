@@ -135,9 +135,9 @@ Throughout development, Kiro maintained comprehensive documentation:
 
 The documentation wasn't an afterthought—it evolved with the code, ensuring the project remained maintainable and accessible.
 
-## The Final Product: A Technical Marvel
+## The Final Product
 
-### Screenshots 8 & 9: The Completed Application
+### WebApp Screenshots
 
 ![Final VT-100 AI Typing Tutor](8%20-%20Final%20VT-100%20AI%20Typing%20Tutor.png)
 
@@ -193,7 +193,7 @@ This project proves that resurrection isn't just about nostalgia—it's about re
 - The satisfying tactile feedback of character-by-character typing
 - The sense of direct communication with the machine
 
-**What We Added from 2024:**
+**What We Added from 2025:**
 - AI-powered personalized learning and exercise generation
 - Real-time performance analytics and intelligent feedback
 - Modern web technologies (React, TypeScript, Next.js)
@@ -215,18 +215,6 @@ The AI doesn't just generate random text—it creates targeted exercises based o
 // AI analyzes your weak spots and creates focused practice
 "You've been struggling with the 'qu' combination. Here's targeted practice:
 'The quick brown fox requires quite a few quality questions...'"
-```
-## Real-Time Performance Optimization
-The typing engine processes input with minimal latency:
-
-```typescript
-// Optimized character processing with immediate feedback
-const handleCharacterInput = useCallback((char: string) => {
-  const isCorrect = char === expectedChar;
-  updateProgress(isCorrect);
-  playAudioFeedback(isCorrect);
-  updateVisualFeedback(isCorrect);
-}, [expectedChar, updateProgress, playAudioFeedback]);
 ```
 
 ## The Kiro Development Experience
