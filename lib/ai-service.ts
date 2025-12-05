@@ -153,6 +153,7 @@ export class AIServiceImpl {
   /**
    * Enhanced chat method with comprehensive prompting and structured JSON responses
    * Implements requirements 1.1, 1.2, 4.1, 4.2 for intelligent intent detection
+   * Implements requirements 3.1, 3.2, 3.3, 3.4, 3.5 for key drill detection and generation
    */
   async chatWithUserEnhanced(
     message: string,
@@ -218,6 +219,7 @@ Respond with valid JSON following the exact format specified in the system promp
   /**
    * Creates the enhanced system prompt for intent detection and response generation
    * Implements requirements 1.2, 1.3, 1.4, 1.5 for comprehensive prompting
+   * Implements requirements 3.1, 3.2, 3.3, 3.4 for key drill generation rules
    */
   private createEnhancedSystemPrompt(): string {
     return `You are an AI typing tutor assistant. You must respond with valid JSON containing exactly these fields:
@@ -236,9 +238,20 @@ TYPING TEXT GENERATION RULES:
 - Only generate typing-text for "session-suggest" intent
 - For chitchat and session-analysis, set typing-text to null
 - Word count: EXACTLY as requested by user, or 30-40 words if not specified
-- Key drills: Use ONLY the specified keys plus spaces (e.g., "asaa dass dsdsd" for a,s,d keys)
 - Regular exercises: Use standard keyboard characters only
 - Validate word count precision - count every word carefully
+
+KEY DRILL GENERATION RULES (when user requests key drills):
+- DETECT key drill requests: "drill keys a s d", "practice f j keys", "key exercise a s d f"
+- When key drill is requested, classify intent as "session-suggest"
+- Use ONLY the specified keys plus spaces - NO OTHER CHARACTERS ALLOWED
+- Create varied patterns and combinations using exclusively the target keys
+- Generate sequences like "asaa dass dsdsd" for keys a,s,d
+- Form different patterns: single key repetition, alternating keys, combinations
+- Examples for keys [a,s,d]: "aaa sss ddd", "asa sds dad", "asad sdas dasd"
+- CRITICAL: Verify that EVERY character (except spaces) is from the specified key set
+- Generate 50-100 character sequences separated by spaces
+- If no specific keys mentioned in drill request, use common problem keys: a,s,d,f
 
 RESPONSE GUIDELINES FOR EACH INTENT:
 
@@ -267,6 +280,7 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   /**
    * Processes intent-specific response handling and validation
    * Implements requirements 1.2, 1.3, 1.4, 1.5 for intent classification and response behavior
+   * Implements requirements 3.1, 3.2, 3.3, 3.4, 3.5 for key drill handling
    */
   private processIntentSpecificResponse(
     response: StructuredAIResponse,
@@ -374,8 +388,18 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   /**
    * Handles session-suggest intent responses with typing exercise generation
    * Implements requirement 1.5 for session-suggest response with typing exercise generation
+   * Implements requirements 3.2, 3.3, 3.4 for key drill text generation
    */
-  private handleSessionSuggestResponse(response: StructuredAIResponse, originalMessage: string): StructuredAIResponse {
+  private handleSessionSuggestResponse(
+    response: StructuredAIResponse, 
+    originalMessage: string
+  ): StructuredAIResponse {
+    // Check if this is a key drill request and validate accordingly
+    const isKeyDrillRequest = this.isKeyDrillRequest(originalMessage);
+    if (isKeyDrillRequest) {
+      return this.validateKeyDrillResponse(response, originalMessage);
+    }
+
     // Validate that typing-text is provided for session-suggest
     if (!response['typing-text']) {
       // Generate fallback typing text if missing using enhanced extraction
@@ -407,6 +431,103 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     }
 
     return response;
+  }
+
+  /**
+   * Checks if the message is requesting a key drill
+   * Implements requirement 3.1 for key drill detection
+   */
+  private isKeyDrillRequest(message: string): boolean {
+    const keyDrillPatterns = [
+      /(?:drill|practice)\s+(?:keys?|letters?)/i,
+      /(?:key|finger)\s+(?:drill|exercise|practice)/i,
+      /(?:drill|practice)\s+[a-zA-Z\s,]+\s+(?:keys?|letters?)/i,
+      /(?:home\s+row|finger\s+position)\s+(?:drill|practice|exercise)/i,
+    ];
+
+    return keyDrillPatterns.some(pattern => pattern.test(message));
+  }
+
+  /**
+   * Validates and enhances key drill responses
+   * Implements requirements 3.2, 3.3, 3.4 for key drill text validation and generation
+   */
+  private validateKeyDrillResponse(
+    response: StructuredAIResponse,
+    originalMessage: string
+  ): StructuredAIResponse {
+    let drillText = response['typing-text'];
+    
+    // Extract keys from the original message
+    const extractedKeys = this.extractKeysFromMessage(originalMessage);
+    
+    // If AI didn't generate proper drill text or it's invalid, generate fallback
+    if (!drillText || !this.isValidKeyDrillText(drillText, extractedKeys)) {
+      console.warn('AI-generated drill text invalid, generating fallback');
+      
+      // Use extracted keys or fallback to common keys
+      const keysToUse = extractedKeys.length > 0 ? extractedKeys : ['a', 's', 'd', 'f'];
+      drillText = this.generateKeyDrillText(keysToUse, 80);
+      
+      return {
+        intent: 'session-suggest',
+        'typing-text': drillText,
+        response: `Here's a targeted drill for the keys: ${keysToUse.join(', ')}. ${response.response || 'Focus on accuracy and build muscle memory for these specific keys!'}`
+      };
+    }
+
+    return response;
+  }
+
+  /**
+   * Extracts specific keys mentioned in the message
+   * Implements requirement 3.1 for key extraction from user requests
+   */
+  private extractKeysFromMessage(message: string): string[] {
+    const keyPatterns = [
+      /(?:drill|practice)\s+(?:keys?|letters?)\s*[:\-]?\s*([a-zA-Z\s,]+)/i,
+      /(?:practice|drill)\s+([a-zA-Z\s,]+)\s+(?:keys?|letters?)/i,
+      /(?:key|finger)\s+(?:drill|exercise|practice)\s+([a-zA-Z\s,]+)/i,
+    ];
+
+    for (const pattern of keyPatterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) {
+        const keys = match[1]
+          .split(/[,\s]+/)
+          .map(k => k.toLowerCase().trim())
+          .filter(k => k.length === 1 && /[a-z]/.test(k))
+          .slice(0, 8); // Limit to 8 keys maximum
+        
+        if (keys.length > 0) {
+          return keys;
+        }
+      }
+    }
+
+    return [];
+  }
+
+  /**
+   * Validates that drill text uses only specified keys and spaces
+   * Implements requirement 3.3 for key drill exclusivity validation
+   */
+  private isValidKeyDrillText(text: string, allowedKeys: string[]): boolean {
+    if (!text || allowedKeys.length === 0) {
+      return false;
+    }
+
+    const allowedChars = new Set([...allowedKeys.map(k => k.toLowerCase()), ' ']);
+    
+    for (const char of text.toLowerCase()) {
+      if (!allowedChars.has(char)) {
+        return false;
+      }
+    }
+    
+    // Ensure the text actually contains the target keys
+    const hasTargetKeys = allowedKeys.some(key => text.toLowerCase().includes(key));
+    return hasTargetKeys;
   }
 
   /**
@@ -455,35 +576,80 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   }
 
   /**
-   * Generates key drill text using only specified keys
+   * Generates key drill text using only specified keys and spaces
+   * Implements requirements 3.2, 3.3, 3.4 for key drill text generation
    * Used for targeted key practice exercises
    */
-  private generateKeyDrillText(keys: string[], maxWords: number): string {
+  private generateKeyDrillText(keys: string[], targetLength: number = 100): string {
+    if (keys.length === 0) {
+      return '';
+    }
+
+    const normalizedKeys = keys.map(k => k.toLowerCase()).slice(0, 8); // Limit to 8 keys
     const patterns = [];
-    const targetLength = Math.min(maxWords * 6, 200); // Approximate character target
+    const maxPatternLength = Math.min(targetLength, 200);
     
-    // Generate various patterns with the specified keys
-    for (let i = 0; i < keys.length && patterns.join(' ').length < targetLength; i++) {
-      const key = keys[i].toLowerCase();
-      
-      // Single key repetition
+    // Pattern 1: Single key repetition (e.g., "aaa sss ddd")
+    normalizedKeys.forEach(key => {
       patterns.push(`${key}${key}${key}`);
-      
-      // Key combinations with other specified keys
-      for (let j = i + 1; j < keys.length && patterns.join(' ').length < targetLength; j++) {
-        const otherKey = keys[j].toLowerCase();
-        patterns.push(`${key}${otherKey}${key}`);
-        patterns.push(`${otherKey}${key}${otherKey}`);
-      }
-      
-      // Alternating patterns
-      if (i < keys.length - 1) {
-        const nextKey = keys[i + 1].toLowerCase();
-        patterns.push(`${key} ${nextKey} ${key} ${nextKey}`);
+      patterns.push(`${key}${key}${key}${key}`);
+    });
+    
+    // Pattern 2: Alternating pairs (e.g., "asa sds dad")
+    for (let i = 0; i < normalizedKeys.length; i++) {
+      for (let j = i + 1; j < normalizedKeys.length; j++) {
+        const key1 = normalizedKeys[i];
+        const key2 = normalizedKeys[j];
+        patterns.push(`${key1}${key2}${key1}`);
+        patterns.push(`${key2}${key1}${key2}`);
+        patterns.push(`${key1}${key1}${key2}`);
+        patterns.push(`${key2}${key2}${key1}`);
       }
     }
     
-    return patterns.join(' ').substring(0, targetLength);
+    // Pattern 3: Triple combinations (e.g., "asad sdas dasd")
+    if (normalizedKeys.length >= 3) {
+      for (let i = 0; i < normalizedKeys.length - 2; i++) {
+        const key1 = normalizedKeys[i];
+        const key2 = normalizedKeys[i + 1];
+        const key3 = normalizedKeys[i + 2];
+        patterns.push(`${key1}${key2}${key3}${key1}`);
+        patterns.push(`${key3}${key2}${key1}${key3}`);
+        patterns.push(`${key1}${key3}${key2}${key1}`);
+      }
+    }
+    
+    // Pattern 4: Longer sequences for variety
+    normalizedKeys.forEach(key => {
+      patterns.push(`${key}${key}${key}${key}${key}`);
+    });
+    
+    // Pattern 5: Mixed patterns with all keys
+    if (normalizedKeys.length >= 2) {
+      const allKeysPattern = normalizedKeys.join('');
+      patterns.push(allKeysPattern);
+      patterns.push(allKeysPattern.split('').reverse().join(''));
+    }
+    
+    // Join patterns with spaces and ensure we don't exceed target length
+    let result = patterns.join(' ');
+    
+    // Trim to target length while preserving word boundaries
+    if (result.length > maxPatternLength) {
+      result = result.substring(0, maxPatternLength);
+      const lastSpace = result.lastIndexOf(' ');
+      if (lastSpace > maxPatternLength * 0.8) {
+        result = result.substring(0, lastSpace);
+      }
+    }
+    
+    // Ensure we have a minimum amount of content
+    if (result.length < 20 && normalizedKeys.length > 0) {
+      const key = normalizedKeys[0];
+      result = `${key}${key}${key} ${key}${key} ${key}${key}${key}${key}`;
+    }
+    
+    return result.trim();
   }
 
   async chatWithUser(

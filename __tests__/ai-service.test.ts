@@ -14,6 +14,7 @@ import { it } from 'zod/v4/locales'
 import { it } from 'zod/v4/locales'
 import { it } from 'zod/v4/locales'
 import { it } from 'zod/v4/locales'
+import { it } from 'zod/v4/locales'
 import { beforeEach } from 'node:test'
 import { describe } from 'yargs'
 import { AIServiceImpl } from '../lib/ai-service'
@@ -146,6 +147,27 @@ describe('AIService', () => {
     expect(response).toHaveProperty('typing-text')
     expect(response).toHaveProperty('response')
     expect(['chitchat', 'session-analysis', 'session-suggest']).toContain(response.intent)
+    expect(typeof response.response).toBe('string')
+    expect(response.response.length).toBeGreaterThan(0)
+  })
+
+  it('should handle key drill requests in enhanced chat', async () => {
+    const mockHistory = {
+      sessions: [],
+      totalSessions: 5,
+      averageWPM: 45,
+      averageAccuracy: 92,
+      weakKeys: ['a', 's', 'd'],
+      improvementTrend: 'improving' as const
+    }
+
+    const response = await aiService.chatWithUserEnhanced('drill keys a s d', mockHistory, [])
+    
+    expect(response).toHaveProperty('intent', 'session-suggest')
+    expect(response).toHaveProperty('typing-text')
+    expect(response).toHaveProperty('response')
+    expect(typeof response['typing-text']).toBe('string')
+    expect(response['typing-text']).toBeTruthy()
     expect(typeof response.response).toBe('string')
     expect(response.response.length).toBeGreaterThan(0)
   })
