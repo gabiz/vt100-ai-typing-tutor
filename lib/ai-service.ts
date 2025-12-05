@@ -14,147 +14,212 @@ export class AIServiceImpl {
     apiKey: process.env.ANTHROPIC_API_KEY
   })
   private model = this.anthropicClient('claude-haiku-4-5-20251001')
+  
+  // API failure tracking for graceful degradation
+  private apiFailureCount = 0
+  private lastApiFailure: Date | null = null
+  private readonly maxConsecutiveFailures = 3
+  private readonly failureCooldownMs = 5 * 60 * 1000 // 5 minutes
 
   async generateExercise(
     prompt: string, 
     difficulty: string, 
     focusKeys?: string[]
   ): Promise<TypingExercise> {
-    try {
-      // Check if this is a drill request for key practice
-      const isDrillRequest = /(?:drill|practice.*keys?|key.*drill|finger.*exercise)/i.test(prompt);
-      
-      if (isDrillRequest && focusKeys && focusKeys.length > 0) {
-        // Generate a key-focused drill instead of word-based text
-        return this.generateKeyDrill(focusKeys, difficulty);
-      }
-      
-      // Extract requested word count from prompt with enhanced validation
-      const requestedWordCount = this.extractWordCount(prompt);
-      const targetWords = requestedWordCount || this.getDefaultWordCount();
+    // Check if this is a drill request for key practice
+    const isDrillRequest = /(?:drill|practice.*keys?|key.*drill|finger.*exercise)/i.test(prompt);
+    
+    if (isDrillRequest && focusKeys && focusKeys.length > 0) {
+      // Generate a key-focused drill instead of word-based text
+      return this.generateKeyDrill(focusKeys, difficulty);
+    }
+    
+    // Extract requested word count from prompt with enhanced validation
+    const requestedWordCount = this.extractWordCount(prompt);
+    const targetWords = requestedWordCount || this.getDefaultWordCount();
 
-      const systemPrompt = `You are a typing exercise generator. Generate ONLY the text content that users should type for practice.
+    // Use graceful degradation wrapper for AI calls
+    return await this.callAIWithFallback(
+      // AI call
+      async () => {
+        const systemPrompt = `You are a typing exercise generator. Generate ONLY the text content that users should type for practice.
 
-      CRITICAL WORD COUNT REQUIREMENTS - ABSOLUTE PRECISION REQUIRED:
-      - Generate EXACTLY ${targetWords} words - this is MANDATORY and NON-NEGOTIABLE
-      - Count every single word as you write: 1, 2, 3... up to ${targetWords} then STOP IMMEDIATELY
-      - NEVER generate ${targetWords + 1} or ${targetWords - 1} words - EXACTLY ${targetWords} words
-      - Word count precision is the PRIMARY requirement - everything else is secondary
-      - If user requested specific count, it MUST be followed with absolute precision
-      - Validate your word count before responding - count each word individually
-      
-      RESPONSE FORMAT RULES:
-      - Respond with ONLY the typing exercise text, no explanations or instructions
-      - Do NOT include phrases like "Here's your exercise" or "Practice typing this"
-      - No introductory or concluding remarks - ONLY the exercise text
-      
-      CHARACTER AND CONTENT RULES:
-      - ONLY use standard keyboard characters: letters (a-z, A-Z), numbers (0-9), and basic punctuation
-      - NEVER use special symbols like °, ©, ®, €, £, ™, or any Unicode characters
-      - Allowed punctuation: . , ! ? ; : " ' - ( ) / @ # $ % & *
-      - Make the content appropriate for the difficulty level
-      - If focusKeys are specified, use those letters HEAVILY - at least 50% of the text should contain focus keys
-      - When focus keys are provided, create words and sentences that specifically practice those letters
-      
-      WORD COUNT VALIDATION PROCESS:
-      1. Write your text
-      2. Count the words by splitting on spaces: word1 word2 word3...
-      3. Verify the count equals EXACTLY ${targetWords}
-      4. If not exactly ${targetWords}, adjust immediately
-      5. Double-check before responding
-      
-      TARGET: EXACTLY ${targetWords} WORDS (${requestedWordCount ? 'USER REQUESTED' : 'DEFAULT RANGE'})
-      
-      Difficulty levels:
-      - beginner: Simple words, basic punctuation (. , ! ?), EXACTLY ${targetWords} words
-      - intermediate: Mixed case, common punctuation (; : " ' -), EXACTLY ${targetWords} words  
-      - advanced: Complex vocabulary, keyboard symbols (@ # $ % & *), technical terms, EXACTLY ${targetWords} words`
-
-      const userPrompt = focusKeys 
-        ? `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. FOCUS KEYS: ${focusKeys.join(', ')} - use these letters HEAVILY throughout the text. Create ${difficulty} typing text with many words containing ${focusKeys.join(', ')}. Examples: ${focusKeys.includes('e') ? 'exercise, element, energy' : ''} ${focusKeys.includes('n') ? 'nature, number, engine' : ''}. Theme: ${prompt}. CRITICAL: EXACTLY ${targetWords} words and HEAVY use of focus keys.`
-        : `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. Count: 1, 2, 3... up to ${targetWords} then STOP. Create ${difficulty} level typing text. Theme: ${prompt}. REQUIREMENT: EXACTLY ${targetWords} words - not ${targetWords - 1}, not ${targetWords + 1}, but EXACTLY ${targetWords}.`
-
-      const { text } = await generateText({
-        model: this.model,
-        system: systemPrompt,
-        prompt: userPrompt,
-      })
-
-      // Validate that the response is appropriate for typing practice
-      if (this.isOffTopic(text)) {
-        throw new Error('Generated content is not suitable for typing practice')
-      }
-
-      // Validate that only standard keyboard characters are used
-      if (this.hasInvalidCharacters(text)) {
-        console.warn('Generated text contains invalid characters, using fallback');
-        return this.getFallbackExercise(difficulty, focusKeys);
-      }
-
-      // Enhanced word count validation using new validation method
-      const validation = this.validateWordCount(text, requestedWordCount);
-      
-      if (!validation.isValid) {
-        console.warn(validation.message);
+        CRITICAL WORD COUNT REQUIREMENTS - ABSOLUTE PRECISION REQUIRED:
+        - Generate EXACTLY ${targetWords} words - this is MANDATORY and NON-NEGOTIABLE
+        - Count every single word as you write: 1, 2, 3... up to ${targetWords} then STOP IMMEDIATELY
+        - NEVER generate ${targetWords + 1} or ${targetWords - 1} words - EXACTLY ${targetWords} words
+        - Word count precision is the PRIMARY requirement - everything else is secondary
+        - If user requested specific count, it MUST be followed with absolute precision
+        - Validate your word count before responding - count each word individually
         
-        // For significant deviations (more than 20% off), use fallback
-        const deviationPercentage = Math.abs(validation.actualCount - targetWords) / targetWords;
-        if (deviationPercentage > 0.2) {
-          console.warn(`Word count deviation too high (${Math.round(deviationPercentage * 100)}%), using fallback exercise`);
+        RESPONSE FORMAT RULES:
+        - Respond with ONLY the typing exercise text, no explanations or instructions
+        - Do NOT include phrases like "Here's your exercise" or "Practice typing this"
+        - No introductory or concluding remarks - ONLY the exercise text
+        
+        CHARACTER AND CONTENT RULES:
+        - ONLY use standard keyboard characters: letters (a-z, A-Z), numbers (0-9), and basic punctuation
+        - NEVER use special symbols like °, ©, ®, €, £, ™, or any Unicode characters
+        - Allowed punctuation: . , ! ? ; : " ' - ( ) / @ # $ % & *
+        - Make the content appropriate for the difficulty level
+        - If focusKeys are specified, use those letters HEAVILY - at least 50% of the text should contain focus keys
+        - When focus keys are provided, create words and sentences that specifically practice those letters
+        
+        WORD COUNT VALIDATION PROCESS:
+        1. Write your text
+        2. Count the words by splitting on spaces: word1 word2 word3...
+        3. Verify the count equals EXACTLY ${targetWords}
+        4. If not exactly ${targetWords}, adjust immediately
+        5. Double-check before responding
+        
+        TARGET: EXACTLY ${targetWords} WORDS (${requestedWordCount ? 'USER REQUESTED' : 'DEFAULT RANGE'})
+        
+        Difficulty levels:
+        - beginner: Simple words, basic punctuation (. , ! ?), EXACTLY ${targetWords} words
+        - intermediate: Mixed case, common punctuation (; : " ' -), EXACTLY ${targetWords} words  
+        - advanced: Complex vocabulary, keyboard symbols (@ # $ % & *), technical terms, EXACTLY ${targetWords} words`
+
+        const userPrompt = focusKeys 
+          ? `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. FOCUS KEYS: ${focusKeys.join(', ')} - use these letters HEAVILY throughout the text. Create ${difficulty} typing text with many words containing ${focusKeys.join(', ')}. Examples: ${focusKeys.includes('e') ? 'exercise, element, energy' : ''} ${focusKeys.includes('n') ? 'nature, number, engine' : ''}. Theme: ${prompt}. CRITICAL: EXACTLY ${targetWords} words and HEAVY use of focus keys.`
+          : `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. Count: 1, 2, 3... up to ${targetWords} then STOP. Create ${difficulty} level typing text. Theme: ${prompt}. REQUIREMENT: EXACTLY ${targetWords} words - not ${targetWords - 1}, not ${targetWords + 1}, but EXACTLY ${targetWords}.`
+
+        const { text } = await generateText({
+          model: this.model,
+          system: systemPrompt,
+          prompt: userPrompt,
+        })
+
+        // Validate that the response is appropriate for typing practice
+        if (this.isOffTopic(text)) {
+          throw new Error('Generated content is not suitable for typing practice')
+        }
+
+        // Validate that only standard keyboard characters are used
+        if (this.hasInvalidCharacters(text)) {
+          console.warn('Generated text contains invalid characters, using fallback');
           return this.getFallbackExercise(difficulty, focusKeys, targetWords);
         }
-      }
 
-      return {
-        id: crypto.randomUUID(),
-        text: text.trim(),
-        difficulty: difficulty as DifficultyLevel,
-        focusKeys,
-        generatedBy: 'ai',
-        createdAt: new Date()
-      }
-    } catch (error) {
-      console.error('AI exercise generation failed:', error)
-      // Fallback to preset exercise
-      return this.getFallbackExercise(difficulty, focusKeys)
-    }
+        // Enhanced word count validation using new validation method
+        const validation = this.validateWordCount(text, requestedWordCount);
+        
+        if (!validation.isValid) {
+          console.warn(validation.message);
+          
+          // For significant deviations (more than 20% off), use fallback
+          const deviationPercentage = Math.abs(validation.actualCount - targetWords) / targetWords;
+          if (deviationPercentage > 0.2) {
+            console.warn(`Word count deviation too high (${Math.round(deviationPercentage * 100)}%), using fallback exercise`);
+            // Return fallback exercise instead of throwing error
+            return this.getFallbackExercise(difficulty, focusKeys, targetWords);
+          }
+        }
+
+        return {
+          id: crypto.randomUUID(),
+          text: text.trim(),
+          difficulty: difficulty as DifficultyLevel,
+          focusKeys,
+          generatedBy: 'ai',
+          createdAt: new Date()
+        }
+      },
+      // Fallback call
+      async () => {
+        console.log('Using fallback exercise generation due to AI service unavailability');
+        return this.getFallbackExercise(difficulty, focusKeys, targetWords);
+      },
+      'generateExercise'
+    );
   }
 
   async analyzePerformance(history: PerformanceHistory): Promise<string> {
-    try {
-      const systemPrompt = `You are a typing tutor AI. Analyze the user's typing performance and provide helpful improvement suggestions.
-      
-      Focus on:
-      - Identifying patterns in errors
-      - Suggesting specific practice areas
-      - Encouraging progress
-      - Providing actionable advice`
+    return await this.callAIWithFallback(
+      // AI call
+      async () => {
+        const systemPrompt = `You are a typing tutor AI. Analyze the user's typing performance and provide helpful improvement suggestions.
+        
+        Focus on:
+        - Identifying patterns in errors
+        - Suggesting specific practice areas
+        - Encouraging progress
+        - Providing actionable advice`
 
-      const performanceData = `
-      Total sessions: ${history.totalSessions}
-      Average WPM: ${history.averageWPM}
-      Average accuracy: ${history.averageAccuracy}%
-      Weak keys: ${history.weakKeys.join(', ')}
-      Trend: ${history.improvementTrend}
-      `
+        const performanceData = `
+        Total sessions: ${history.totalSessions}
+        Average WPM: ${history.averageWPM}
+        Average accuracy: ${history.averageAccuracy}%
+        Weak keys: ${history.weakKeys.join(', ')}
+        Trend: ${history.improvementTrend}
+        `
 
-      const { text } = await generateText({
-        model: this.model,
-        system: systemPrompt,
-        prompt: `Analyze this typing performance data and provide improvement suggestions: ${performanceData}`,
-      })
+        const { text } = await generateText({
+          model: this.model,
+          system: systemPrompt,
+          prompt: `Analyze this typing performance data and provide improvement suggestions: ${performanceData}`,
+        })
 
-      return text.trim()
-    } catch (error) {
-      console.error('Performance analysis failed:', error)
-      return 'Keep practicing! Focus on accuracy first, then speed will follow naturally.'
+        return text.trim()
+      },
+      // Fallback call
+      async () => {
+        console.log('Using fallback performance analysis due to AI service unavailability');
+        return this.createFallbackPerformanceAnalysis(history);
+      },
+      'analyzePerformance'
+    );
+  }
+
+  /**
+   * Creates fallback performance analysis when AI service is unavailable
+   */
+  private createFallbackPerformanceAnalysis(history: PerformanceHistory): string {
+    if (history.totalSessions === 0) {
+      return "Welcome to typing practice! Start with focusing on accuracy over speed. Keep your fingers on the home row keys and practice regularly.";
     }
+
+    let analysis = `Performance Summary: ${history.averageWPM} WPM at ${history.averageAccuracy}% accuracy over ${history.totalSessions} sessions. `;
+
+    // Speed feedback
+    if (history.averageWPM < 25) {
+      analysis += "Focus on building basic typing speed through daily practice. ";
+    } else if (history.averageWPM < 40) {
+      analysis += "Good progress on speed! Continue practicing to reach 40+ WPM. ";
+    } else {
+      analysis += "Excellent typing speed! ";
+    }
+
+    // Accuracy feedback
+    if (history.averageAccuracy < 85) {
+      analysis += "Prioritize accuracy over speed - slow down and focus on correct key presses. ";
+    } else if (history.averageAccuracy < 95) {
+      analysis += "Good accuracy foundation - work on eliminating remaining errors. ";
+    } else {
+      analysis += "Outstanding accuracy! ";
+    }
+
+    // Weak keys feedback
+    if (history.weakKeys.length > 0) {
+      analysis += `Focus on practicing these challenging keys: ${history.weakKeys.slice(0, 3).join(', ')}. `;
+    }
+
+    // Trend feedback
+    if (history.improvementTrend === 'improving') {
+      analysis += "You're making great progress - keep up the consistent practice!";
+    } else if (history.improvementTrend === 'declining') {
+      analysis += "Take a break and focus on fundamentals - proper finger positioning and accuracy.";
+    } else {
+      analysis += "Try different exercise types to break through your current plateau.";
+    }
+
+    return analysis;
   }
 
   /**
    * Enhanced chat method with comprehensive prompting and structured JSON responses
    * Implements requirements 1.1, 1.2, 4.1, 4.2 for intelligent intent detection
    * Implements requirements 3.1, 3.2, 3.3, 3.4, 3.5 for key drill detection and generation
+   * Includes retry logic for malformed responses and comprehensive error handling
    */
   async chatWithUserEnhanced(
     message: string,
@@ -170,18 +235,22 @@ export class AIServiceImpl {
       }>;
     }
   ): Promise<StructuredAIResponse> {
-    try {
-      // Create comprehensive system prompt for intent detection and response generation
-      const systemPrompt = this.createEnhancedSystemPrompt();
+    const maxRetries = 2;
+    let lastError: Error | null = null;
 
-      // Format conversation history for context
-      const conversationContext = this.formatConversationHistory(conversationHistory);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Create comprehensive system prompt for intent detection and response generation
+        const systemPrompt = this.createEnhancedSystemPrompt();
 
-      // Format performance context
-      const performanceContext = this.formatPerformanceContext(context, lastSessionErrors);
+        // Format conversation history for context
+        const conversationContext = this.formatConversationHistory(conversationHistory);
 
-      // Create comprehensive user prompt with all context
-      const userPrompt = `CONVERSATION HISTORY:
+        // Format performance context
+        const performanceContext = this.formatPerformanceContext(context, lastSessionErrors);
+
+        // Create comprehensive user prompt with all context
+        const userPrompt = `CONVERSATION HISTORY:
 ${conversationContext}
 
 PERFORMANCE CONTEXT:
@@ -191,29 +260,299 @@ USER MESSAGE: ${message}
 
 Respond with valid JSON following the exact format specified in the system prompt.`;
 
-      const { text } = await generateText({
-        model: this.model,
-        system: systemPrompt,
-        prompt: userPrompt,
-      });
+        // Add retry-specific instructions for subsequent attempts
+        const finalPrompt = attempt > 0 
+          ? `${userPrompt}\n\nIMPORTANT: Previous response had formatting issues. Ensure your response is ONLY valid JSON with no additional text before or after the JSON object.`
+          : userPrompt;
 
-      // Parse and validate JSON response
-      const parsedResponse = this.parseAndValidateResponse(text);
-      
-      // Apply intent-specific response handling
-      const enhancedResponse = this.processIntentSpecificResponse(parsedResponse, message, context, lastSessionErrors);
-      
-      return enhancedResponse;
+        const { text } = await generateText({
+          model: this.model,
+          system: systemPrompt,
+          prompt: finalPrompt,
+        });
 
-    } catch (error) {
-      console.error('Enhanced chat response failed:', error);
+        // Parse and validate JSON response with retry tracking
+        const parsedResponse = this.parseAndValidateResponse(text, attempt);
+        
+        // Apply intent-specific response handling
+        const enhancedResponse = this.processIntentSpecificResponse(parsedResponse, message, context, lastSessionErrors);
+        
+        // If we get here, the response was successful
+        if (attempt > 0) {
+          console.log(`Enhanced chat succeeded on attempt ${attempt + 1}`);
+        }
+        
+        return enhancedResponse;
+
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Enhanced chat attempt ${attempt + 1} failed:`, error);
+        
+        // If this is not the last attempt and the error suggests a retryable issue, continue
+        if (attempt < maxRetries && this.isRetryableAIError(error as Error)) {
+          console.log(`Retrying enhanced chat (attempt ${attempt + 2}/${maxRetries + 1})...`);
+          
+          // Add a small delay before retry to avoid rapid successive calls
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
+        }
+        
+        // If we've exhausted retries or hit a non-retryable error, break
+        break;
+      }
+    }
+
+    // All retries failed, create comprehensive fallback response
+    console.error('All enhanced chat attempts failed, falling back to current system');
+    return this.createEnhancedFallbackResponse(message, context, lastError);
+  }
+
+  /**
+   * Determines if an AI generation error is retryable
+   */
+  private isRetryableAIError(error: Error): boolean {
+    const retryablePatterns = [
+      /timeout/i,
+      /network/i,
+      /connection/i,
+      /rate limit/i,
+      /temporary/i,
+      /json/i,
+      /parsing/i,
+      /malformed/i
+    ];
+
+    return retryablePatterns.some(pattern => pattern.test(error.message));
+  }
+
+  /**
+   * Creates enhanced fallback response that attempts to use current chat system
+   * Implements fallback to current chat system on parsing failures
+   */
+  private async createEnhancedFallbackResponse(
+    message: string,
+    context: PerformanceHistory,
+    lastError: Error | null
+  ): Promise<StructuredAIResponse> {
+    try {
+      console.log('Attempting fallback to current chat system...');
       
-      // Fallback to structured error response
-      return {
-        intent: 'chitchat',
-        'typing-text': null,
-        response: "I'm having trouble processing your request right now. Try asking for a typing exercise or practice suggestion!"
+      // Check if the error was an API failure - if so, use static fallback to avoid recursive failures
+      if (lastError && this.isApiFailure(lastError)) {
+        console.log('API failure detected, using static fallback instead of current chat system');
+        return this.createStaticFallbackResponse(message, context);
+      }
+      
+      // Try to use the existing chatWithUser method as fallback
+      const fallbackResponse = await this.chatWithUser(message, context);
+      
+      // Convert the string response to structured format
+      const structuredFallback: StructuredAIResponse = {
+        intent: this.classifyMessageIntent(message),
+        'typing-text': null, // Current system doesn't generate typing text
+        response: fallbackResponse
       };
+
+      console.log('Successfully fell back to current chat system');
+      return structuredFallback;
+
+    } catch (fallbackError) {
+      console.error('Fallback to current system also failed:', fallbackError);
+      
+      // If the fallback also failed due to API issues, record it
+      if (this.isApiFailure(fallbackError as Error)) {
+        this.recordApiFailure(fallbackError as Error);
+      }
+      
+      // Final fallback - return a safe, static response
+      return this.createStaticFallbackResponse(message, context);
+    }
+  }
+
+  /**
+   * Creates a static fallback response without making any API calls
+   */
+  private createStaticFallbackResponse(message: string, context: PerformanceHistory): StructuredAIResponse {
+    const intent = this.classifyMessageIntent(message);
+    
+    const responses = {
+      'chitchat': `${this.createServiceUnavailableMessage('chat')} I can still provide basic typing guidance and preset exercises.`,
+      'session-analysis': context.totalSessions > 0 
+        ? `${this.createServiceUnavailableMessage('analysis')} Your current stats: ${context.averageWPM} WPM, ${context.averageAccuracy}% accuracy over ${context.totalSessions} sessions.`
+        : `${this.createServiceUnavailableMessage('analysis')} Start practicing to build your typing history!`,
+      'session-suggest': `${this.createServiceUnavailableMessage('exercise')} Try asking for a 'preset exercise' or specify difficulty like 'beginner exercise'.`
+    };
+
+    return {
+      intent,
+      'typing-text': null,
+      response: responses[intent]
+    };
+  }
+
+  /**
+   * Simple intent classification for fallback scenarios
+   */
+  private classifyMessageIntent(message: string): 'chitchat' | 'session-analysis' | 'session-suggest' {
+    const lowerMessage = message.toLowerCase();
+
+    // Check for exercise/practice requests
+    if (lowerMessage.includes('exercise') || lowerMessage.includes('practice') ||
+        lowerMessage.includes('drill') || lowerMessage.includes('challenge') ||
+        lowerMessage.includes('generate') || lowerMessage.includes('give me') ||
+        /\d+\s*words?/.test(lowerMessage)) {
+      return 'session-suggest';
+    }
+
+    // Check for analysis requests
+    if (lowerMessage.includes('performance') || lowerMessage.includes('analysis') ||
+        lowerMessage.includes('how am i') || lowerMessage.includes('progress') ||
+        lowerMessage.includes('improve') || lowerMessage.includes('feedback')) {
+      return 'session-analysis';
+    }
+
+    // Default to chitchat
+    return 'chitchat';
+  }
+
+  /**
+   * Checks if the AI service is currently available or if we should use fallback methods
+   * Implements graceful degradation based on recent API failures
+   */
+  private isAIServiceAvailable(): boolean {
+    // If we haven't had recent failures, service is available
+    if (this.apiFailureCount === 0 || !this.lastApiFailure) {
+      return true;
+    }
+
+    // If we've had too many consecutive failures, check if cooldown period has passed
+    if (this.apiFailureCount >= this.maxConsecutiveFailures) {
+      const timeSinceLastFailure = Date.now() - this.lastApiFailure.getTime();
+      
+      if (timeSinceLastFailure < this.failureCooldownMs) {
+        console.warn(`AI service temporarily unavailable due to ${this.apiFailureCount} consecutive failures. Cooldown period: ${Math.ceil((this.failureCooldownMs - timeSinceLastFailure) / 1000)}s remaining`);
+        return false;
+      } else {
+        // Cooldown period has passed, reset failure count and try again
+        console.log('AI service cooldown period expired, attempting to restore service');
+        this.resetApiFailureTracking();
+        return true;
+      }
+    }
+
+    // Service is available but we've had some failures
+    return true;
+  }
+
+  /**
+   * Records an API failure for tracking and graceful degradation
+   */
+  private recordApiFailure(error: Error): void {
+    this.apiFailureCount++;
+    this.lastApiFailure = new Date();
+    
+    console.error(`AI API failure recorded (${this.apiFailureCount}/${this.maxConsecutiveFailures}):`, {
+      error: error.message,
+      timestamp: this.lastApiFailure.toISOString(),
+      willEnterCooldown: this.apiFailureCount >= this.maxConsecutiveFailures
+    });
+
+    if (this.apiFailureCount >= this.maxConsecutiveFailures) {
+      console.warn(`AI service entering cooldown mode for ${this.failureCooldownMs / 1000}s due to consecutive failures`);
+    }
+  }
+
+  /**
+   * Records a successful API call, resetting failure tracking
+   */
+  private recordApiSuccess(): void {
+    if (this.apiFailureCount > 0) {
+      console.log(`AI service restored after ${this.apiFailureCount} failures`);
+      this.resetApiFailureTracking();
+    }
+  }
+
+  /**
+   * Resets API failure tracking
+   */
+  private resetApiFailureTracking(): void {
+    this.apiFailureCount = 0;
+    this.lastApiFailure = null;
+  }
+
+  /**
+   * Determines if an error is an API-level failure that should trigger graceful degradation
+   */
+  private isApiFailure(error: Error): boolean {
+    const apiFailurePatterns = [
+      /network/i,
+      /connection/i,
+      /timeout/i,
+      /rate limit/i,
+      /service unavailable/i,
+      /internal server error/i,
+      /bad gateway/i,
+      /gateway timeout/i,
+      /authentication/i,
+      /unauthorized/i,
+      /forbidden/i,
+      /api key/i,
+      /quota/i,
+      /billing/i
+    ];
+
+    return apiFailurePatterns.some(pattern => pattern.test(error.message));
+  }
+
+  /**
+   * Wraps AI API calls with failure tracking and graceful degradation
+   */
+  private async callAIWithFallback<T>(
+    aiCall: () => Promise<T>,
+    fallbackCall: () => Promise<T> | T,
+    operationName: string
+  ): Promise<T> {
+    // Check if service is available
+    if (!this.isAIServiceAvailable()) {
+      console.log(`${operationName}: AI service unavailable, using fallback immediately`);
+      return await fallbackCall();
+    }
+
+    try {
+      const result = await aiCall();
+      this.recordApiSuccess();
+      return result;
+    } catch (error) {
+      const err = error as Error;
+      
+      // Check if this is an API failure that should trigger graceful degradation
+      if (this.isApiFailure(err)) {
+        this.recordApiFailure(err);
+        console.log(`${operationName}: API failure detected, falling back to alternative method`);
+        return await fallbackCall();
+      } else {
+        // This is likely a logic error or other non-API issue, don't record as API failure
+        console.error(`${operationName}: Non-API error occurred:`, err);
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Creates appropriate error messages for service unavailability
+   */
+  private createServiceUnavailableMessage(operationType: 'chat' | 'exercise' | 'analysis'): string {
+    const baseMessage = "I'm temporarily experiencing connectivity issues.";
+    
+    switch (operationType) {
+      case 'chat':
+        return `${baseMessage} I can still help with basic typing guidance. Try asking for preset exercises or general typing tips.`;
+      case 'exercise':
+        return `${baseMessage} I'll provide you with a preset typing exercise instead.`;
+      case 'analysis':
+        return `${baseMessage} I can provide basic performance feedback, but detailed analysis is temporarily unavailable.`;
+      default:
+        return `${baseMessage} Please try again in a few minutes.`;
     }
   }
 
@@ -749,63 +1088,144 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
       }>;
     }
   ): Promise<string> {
-    try {
-      // Check if the message is typing-related
-      if (!this.isTypingRelated(message)) {
-        return "I'm here to help you improve your typing skills! Try asking for a typing exercise, practice suggestions, or performance analysis."
-      }
+    // Check if the message is typing-related
+    if (!this.isTypingRelated(message)) {
+      return "I'm here to help you improve your typing skills! Try asking for a typing exercise, practice suggestions, or performance analysis."
+    }
 
-      const systemPrompt = `You are a concise typing tutor AI. Provide brief, helpful responses about typing improvement.
+    return await this.callAIWithFallback(
+      // AI call
+      async () => {
+        const systemPrompt = `You are a concise typing tutor AI. Provide brief, helpful responses about typing improvement.
 
-      Rules:
-      - Keep responses under 50 words
-      - Focus on actionable typing advice
-      - Encourage users to request specific exercises
-      - If they want practice text, tell them to ask for an "exercise" or "challenge"`
+        Rules:
+        - Keep responses under 50 words
+        - Focus on actionable typing advice
+        - Encourage users to request specific exercises
+        - If they want practice text, tell them to ask for an "exercise" or "challenge"`
 
-      let contextInfo = context.totalSessions > 0 
-        ? `User context: ${context.totalSessions} sessions completed, ${context.averageWPM} WPM average, ${context.averageAccuracy}% accuracy`
-        : 'New user with no typing history';
+        let contextInfo = context.totalSessions > 0 
+          ? `User context: ${context.totalSessions} sessions completed, ${context.averageWPM} WPM average, ${context.averageAccuracy}% accuracy`
+          : 'New user with no typing history';
 
-      // Add last session error information if available
-      if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
-        const problemKeys = Object.entries(lastSessionErrors.keyErrorMap)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 5)
-          .map(([key, count]) => `${key} (${count} errors)`);
-        
-        contextInfo += `\nLast session problematic keys: ${problemKeys.join(', ')}`;
-        
-        if (lastSessionErrors.detailedErrors.length > 0) {
-          const commonMistakes = lastSessionErrors.detailedErrors
-            .reduce((acc, error) => {
-              const mistake = `'${error.expected}' → '${error.typed}'`;
-              acc[mistake] = (acc[mistake] || 0) + 1;
-              return acc;
-            }, {} as Record<string, number>);
-
-          const topMistakes = Object.entries(commonMistakes)
+        // Add last session error information if available
+        if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
+          const problemKeys = Object.entries(lastSessionErrors.keyErrorMap)
             .sort(([,a], [,b]) => b - a)
-            .slice(0, 3)
-            .map(([mistake, count]) => `${mistake} (${count}x)`);
+            .slice(0, 5)
+            .map(([key, count]) => `${key} (${count} errors)`);
+          
+          contextInfo += `\nLast session problematic keys: ${problemKeys.join(', ')}`;
+          
+          if (lastSessionErrors.detailedErrors.length > 0) {
+            const commonMistakes = lastSessionErrors.detailedErrors
+              .reduce((acc, error) => {
+                const mistake = `'${error.expected}' → '${error.typed}'`;
+                acc[mistake] = (acc[mistake] || 0) + 1;
+                return acc;
+              }, {} as Record<string, number>);
 
-          if (topMistakes.length > 0) {
-            contextInfo += `\nCommon typing mistakes: ${topMistakes.join(', ')}`;
+            const topMistakes = Object.entries(commonMistakes)
+              .sort(([,a], [,b]) => b - a)
+              .slice(0, 3)
+              .map(([mistake, count]) => `${mistake} (${count}x)`);
+
+            if (topMistakes.length > 0) {
+              contextInfo += `\nCommon typing mistakes: ${topMistakes.join(', ')}`;
+            }
           }
         }
-      }
 
-      const { text } = await generateText({
-        model: this.model,
-        system: systemPrompt,
-        prompt: `${contextInfo}\n\nUser message: ${message}`,
-      })
+        const { text } = await generateText({
+          model: this.model,
+          system: systemPrompt,
+          prompt: `${contextInfo}\n\nUser message: ${message}`,
+        })
 
-      return text.trim()
-    } catch (error) {
-      console.error('Chat response failed:', error)
-      return "I'm having trouble responding right now. Try asking for a typing exercise or practice suggestion!"
+        return text.trim()
+      },
+      // Fallback call
+      async () => {
+        console.log('Using fallback chat response due to AI service unavailability');
+        return this.createFallbackChatResponse(message, context, lastSessionErrors);
+      },
+      'chatWithUser'
+    );
+  }
+
+  /**
+   * Creates fallback chat response when AI service is unavailable
+   */
+  private createFallbackChatResponse(
+    message: string,
+    context: PerformanceHistory,
+    lastSessionErrors?: {
+      keyErrorMap: Record<string, number>;
+      detailedErrors: Array<{
+        position: number;
+        expected: string;
+        typed: string;
+        timestamp: number;
+      }>;
     }
+  ): string {
+    const lowerMessage = message.toLowerCase();
+
+    // Handle exercise requests
+    if (lowerMessage.includes('exercise') || lowerMessage.includes('practice') || lowerMessage.includes('challenge')) {
+      return "I'd be happy to help! Ask me to 'generate an exercise' or specify what you'd like to practice (like 'beginner exercise' or 'practice keys a s d').";
+    }
+
+    // Handle performance questions
+    if (lowerMessage.includes('performance') || lowerMessage.includes('how am i') || lowerMessage.includes('progress')) {
+      if (context.totalSessions === 0) {
+        return "You're just getting started! Focus on accuracy first, then speed will naturally improve with practice.";
+      }
+      
+      let response = `You're averaging ${context.averageWPM} WPM at ${context.averageAccuracy}% accuracy. `;
+      
+      if (context.averageAccuracy < 90) {
+        response += "Focus on accuracy before speed.";
+      } else if (context.averageWPM < 40) {
+        response += "Great accuracy! Now work on building speed.";
+      } else {
+        response += "Excellent progress! Keep practicing consistently.";
+      }
+      
+      return response;
+    }
+
+    // Handle improvement questions
+    if (lowerMessage.includes('improve') || lowerMessage.includes('better') || lowerMessage.includes('tips')) {
+      const tips = [
+        "Keep your fingers on the home row keys (ASDF and JKL;).",
+        "Focus on accuracy first - speed will come naturally.",
+        "Practice regularly, even just 10-15 minutes daily.",
+        "Use proper posture: sit up straight, feet flat on floor.",
+        "Don't look at the keyboard - build muscle memory."
+      ];
+      
+      // Add specific tip based on user's weak areas
+      if (context.weakKeys.length > 0) {
+        return `Practice your weak keys: ${context.weakKeys.slice(0, 3).join(', ')}. ${tips[Math.floor(Math.random() * tips.length)]}`;
+      }
+      
+      return tips[Math.floor(Math.random() * tips.length)];
+    }
+
+    // Handle error-related questions
+    if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0 && 
+        (lowerMessage.includes('error') || lowerMessage.includes('mistake') || lowerMessage.includes('wrong'))) {
+      const topErrorKeys = Object.entries(lastSessionErrors.keyErrorMap)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3)
+        .map(([key]) => key);
+      
+      return `Your most problematic keys are: ${topErrorKeys.join(', ')}. Try practicing these keys specifically with targeted drills.`;
+    }
+
+    // Default response with service unavailability notice
+    return `${this.createServiceUnavailableMessage('chat')} For now, try asking for specific exercises or typing tips!`;
   }
 
   private isOffTopic(text: string): boolean {
@@ -1153,72 +1573,133 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     }>;
     exerciseText?: string;
   }): Promise<string> {
-    try {
-      const systemPrompt = `You are a typing performance analyst. Provide a concise but insightful session summary in 2-3 sentences.
+    return await this.callAIWithFallback(
+      // AI call
+      async () => {
+        const systemPrompt = `You are a typing performance analyst. Provide a concise but insightful session summary in 2-3 sentences.
 
-      CRITICAL: Use the EXACT error data provided - do not give generic responses.
-      
-      Focus on:
-      - Overall performance (WPM and accuracy)
-      - SPECIFIC keys that caused errors (use the "Most problematic keys" and "Common mistakes" data)
-      - Mention the exact keys the user struggled with by name
-      - Actionable improvement suggestions based on actual errors
-      - Offer to generate targeted practice exercises for the problematic keys`
+        CRITICAL: Use the EXACT error data provided - do not give generic responses.
+        
+        Focus on:
+        - Overall performance (WPM and accuracy)
+        - SPECIFIC keys that caused errors (use the "Most problematic keys" and "Common mistakes" data)
+        - Mention the exact keys the user struggled with by name
+        - Actionable improvement suggestions based on actual errors
+        - Offer to generate targeted practice exercises for the problematic keys`
 
-      const errorKeys = Object.entries(sessionData.keyErrorMap)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 3)
-        .map(([key]) => key);
-
-      // Analyze detailed errors for patterns
-      let errorAnalysis = '';
-      if (sessionData.detailedErrors && sessionData.detailedErrors.length > 0) {
-        const commonMistakes = sessionData.detailedErrors
-          .reduce((acc, error) => {
-            const mistake = `'${error.expected}' → '${error.typed}'`;
-            acc[mistake] = (acc[mistake] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>);
-
-        const topMistakes = Object.entries(commonMistakes)
+        const errorKeys = Object.entries(sessionData.keyErrorMap)
           .sort(([,a], [,b]) => b - a)
           .slice(0, 3)
-          .map(([mistake, count]) => `${mistake} (${count}x)`);
+          .map(([key]) => key);
 
-        errorAnalysis = topMistakes.length > 0 ? 
-          `\n- Common mistakes: ${topMistakes.join(', ')}` : '';
-      }
+        // Analyze detailed errors for patterns
+        let errorAnalysis = '';
+        if (sessionData.detailedErrors && sessionData.detailedErrors.length > 0) {
+          const commonMistakes = sessionData.detailedErrors
+            .reduce((acc, error) => {
+              const mistake = `'${error.expected}' → '${error.typed}'`;
+              acc[mistake] = (acc[mistake] || 0) + 1;
+              return acc;
+            }, {} as Record<string, number>);
 
-      // Format error information more prominently
-      let errorSummary = '';
-      if (errorKeys.length > 0) {
-        errorSummary = `\nERROR ANALYSIS (USE THIS DATA):
+          const topMistakes = Object.entries(commonMistakes)
+            .sort(([,a], [,b]) => b - a)
+            .slice(0, 3)
+            .map(([mistake, count]) => `${mistake} (${count}x)`);
+
+          errorAnalysis = topMistakes.length > 0 ? 
+            `\n- Common mistakes: ${topMistakes.join(', ')}` : '';
+        }
+
+        // Format error information more prominently
+        let errorSummary = '';
+        if (errorKeys.length > 0) {
+          errorSummary = `\nERROR ANALYSIS (USE THIS DATA):
 - Problematic keys: ${errorKeys.join(', ')}
 - These keys caused ${errorKeys.map(key => sessionData.keyErrorMap[key]).reduce((a, b) => a + b, 0)} errors total${errorAnalysis}`;
-      } else {
-        errorSummary = '\nNo specific problematic keys identified - excellent accuracy!';
-      }
+        } else {
+          errorSummary = '\nNo specific problematic keys identified - excellent accuracy!';
+        }
 
-      const sessionInfo = `
-      Session Performance:
-      - WPM: ${sessionData.wpm}
-      - Accuracy: ${sessionData.accuracy.toFixed(1)}%
-      - Total Errors: ${sessionData.errorCount}
-      - Time: ${sessionData.timeElapsed}s${errorSummary}
+        const sessionInfo = `
+        Session Performance:
+        - WPM: ${sessionData.wpm}
+        - Accuracy: ${sessionData.accuracy.toFixed(1)}%
+        - Total Errors: ${sessionData.errorCount}
+        - Time: ${sessionData.timeElapsed}s${errorSummary}
+        
+        IMPORTANT: Reference the specific problematic keys by name in your response.`
+
+        const { text } = await generateText({
+          model: this.model,
+          system: systemPrompt,
+          prompt: `Analyze this typing session: ${sessionInfo}`,
+        })
+
+        return text.trim()
+      },
+      // Fallback call
+      async () => {
+        console.log('Using fallback session analysis due to AI service unavailability');
+        return this.createFallbackSessionAnalysis(sessionData);
+      },
+      'analyzeSession'
+    );
+  }
+
+  /**
+   * Creates fallback session analysis when AI service is unavailable
+   */
+  private createFallbackSessionAnalysis(sessionData: {
+    wpm: number;
+    accuracy: number;
+    errorCount: number;
+    timeElapsed: number;
+    keyErrorMap: Record<string, number>;
+    detailedErrors?: Array<{
+      position: number;
+      expected: string;
+      typed: string;
+      timestamp: number;
+    }>;
+    exerciseText?: string;
+  }): string {
+    let analysis = `Session complete! ${sessionData.wpm} WPM at ${sessionData.accuracy.toFixed(1)}% accuracy. `;
+
+    // Analyze error patterns
+    const errorKeys = Object.entries(sessionData.keyErrorMap)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 3)
+      .map(([key]) => key);
+
+    if (errorKeys.length > 0) {
+      analysis += `Your most challenging keys were: ${errorKeys.join(', ')}. `;
       
-      IMPORTANT: Reference the specific problematic keys by name in your response.`
-
-      const { text } = await generateText({
-        model: this.model,
-        system: systemPrompt,
-        prompt: `Analyze this typing session: ${sessionInfo}`,
-      })
-
-      return text.trim()
-    } catch (error) {
-      console.error('Session analysis failed:', error)
-      return `Session complete! ${sessionData.wpm} WPM at ${sessionData.accuracy.toFixed(1)}% accuracy. ${sessionData.errorCount > 5 ? 'Focus on accuracy in your next session.' : 'Great job! Keep practicing to improve speed.'}`
+      // Provide specific advice based on error count
+      const totalKeyErrors = errorKeys.reduce((sum, key) => sum + sessionData.keyErrorMap[key], 0);
+      if (totalKeyErrors > 10) {
+        analysis += "Focus on accuracy with these keys - practice them slowly and deliberately. ";
+      } else if (totalKeyErrors > 5) {
+        analysis += "Practice targeted drills for these keys to improve consistency. ";
+      } else {
+        analysis += "Minor issues with these keys - keep practicing to eliminate remaining errors. ";
+      }
+    } else {
+      analysis += "Excellent accuracy with no significant problem keys! ";
     }
+
+    // Performance feedback
+    if (sessionData.accuracy < 85) {
+      analysis += "Prioritize accuracy over speed in your next session.";
+    } else if (sessionData.accuracy < 95) {
+      analysis += "Good accuracy foundation - work on eliminating remaining errors.";
+    } else if (sessionData.wpm < 30) {
+      analysis += "Outstanding accuracy! Now focus on building speed.";
+    } else {
+      analysis += "Excellent performance! Keep up the consistent practice.";
+    }
+
+    return analysis;
   }
 
   /**
@@ -1624,52 +2105,296 @@ ANALYSIS INSTRUCTIONS: Use this performance data to provide specific, actionable
   }
 
   /**
-   * Parses and validates AI response JSON
+   * Parses and validates AI response JSON with comprehensive error handling
    * Implements requirements 4.1, 4.5 for JSON parsing and validation
    * Implements requirements 4.3, 4.4 for typing-text field management
+   * Adds retry logic for malformed responses and fallback mechanisms
    */
-  private parseAndValidateResponse(responseText: string): StructuredAIResponse {
+  private parseAndValidateResponse(responseText: string, retryCount: number = 0): StructuredAIResponse {
+    const maxRetries = 2;
+    
     try {
       // Clean the response text to extract JSON
       const cleanedText = responseText.trim();
       
-      // Try to find JSON in the response
-      const jsonStart = cleanedText.indexOf('{');
-      const jsonEnd = cleanedText.lastIndexOf('}');
+      // Enhanced JSON extraction with multiple strategies
+      const jsonText = this.extractJsonFromResponse(cleanedText);
       
-      if (jsonStart === -1 || jsonEnd === -1) {
-        throw new Error('No JSON found in response');
+      if (!jsonText) {
+        throw new Error('No valid JSON structure found in response');
       }
       
-      const jsonText = cleanedText.substring(jsonStart, jsonEnd + 1);
       const parsed = JSON.parse(jsonText);
 
-      // Validate required fields
-      if (!parsed.intent || !parsed.response) {
-        throw new Error('Missing required fields in JSON response');
-      }
-
-      // Validate intent value
-      const validIntents = ['chitchat', 'session-analysis', 'session-suggest'];
-      if (!validIntents.includes(parsed.intent)) {
-        throw new Error(`Invalid intent: ${parsed.intent}`);
+      // Comprehensive field validation
+      const validationResult = this.validateResponseStructure(parsed);
+      if (!validationResult.isValid) {
+        throw new Error(`Response validation failed: ${validationResult.errors.join(', ')}`);
       }
 
       // Apply typing-text field management rules
       const managedResponse = this.manageTypingTextField(parsed);
 
+      // Final validation of managed response
+      const finalValidation = this.validateManagedResponse(managedResponse);
+      if (!finalValidation.isValid) {
+        throw new Error(`Final validation failed: ${finalValidation.errors.join(', ')}`);
+      }
+
       return managedResponse;
 
     } catch (error) {
-      console.error('JSON parsing failed:', error);
+      console.error(`JSON parsing failed (attempt ${retryCount + 1}/${maxRetries + 1}):`, error);
       
-      // Return fallback response with retry suggestion
-      return {
-        intent: 'chitchat',
-        'typing-text': null,
-        response: "I had trouble understanding your request. Could you please rephrase it? Try asking for a typing exercise, performance analysis, or practice suggestions."
-      };
+      // If we haven't exceeded retry limit and the error suggests a parsing issue, try to fix it
+      if (retryCount < maxRetries && this.isRetryableError(error as Error)) {
+        console.log('Attempting to repair malformed JSON...');
+        const repairedJson = this.attemptJsonRepair(responseText);
+        if (repairedJson) {
+          return this.parseAndValidateResponse(repairedJson, retryCount + 1);
+        }
+      }
+      
+      // Return structured fallback response based on error type
+      return this.createFallbackResponse(error as Error, responseText);
     }
+  }
+
+  /**
+   * Extracts JSON from AI response using multiple strategies
+   * Handles various response formats and malformed JSON
+   */
+  private extractJsonFromResponse(responseText: string): string | null {
+    // Strategy 1: Look for complete JSON object
+    const jsonStart = responseText.indexOf('{');
+    const jsonEnd = responseText.lastIndexOf('}');
+    
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      const candidate = responseText.substring(jsonStart, jsonEnd + 1);
+      
+      // Quick validation - count braces
+      const openBraces = (candidate.match(/\{/g) || []).length;
+      const closeBraces = (candidate.match(/\}/g) || []).length;
+      
+      if (openBraces === closeBraces) {
+        return candidate;
+      }
+    }
+
+    // Strategy 2: Look for JSON code blocks (```json)
+    const codeBlockMatch = responseText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+    if (codeBlockMatch) {
+      return codeBlockMatch[1].trim();
+    }
+
+    // Strategy 3: Look for JSON between specific markers
+    const markerPatterns = [
+      /JSON:\s*(\{[\s\S]*?\})/i,
+      /Response:\s*(\{[\s\S]*?\})/i,
+      /\n(\{[\s\S]*?\})\n/,
+    ];
+
+    for (const pattern of markerPatterns) {
+      const match = responseText.match(pattern);
+      if (match) {
+        return match[1].trim();
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Validates the structure of parsed JSON response
+   * Ensures all required fields are present and valid
+   */
+  private validateResponseStructure(parsed: unknown): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // Check if parsed is an object
+    if (!parsed || typeof parsed !== 'object') {
+      errors.push('Response is not a valid object');
+      return { isValid: false, errors };
+    }
+
+    // Type guard to ensure we can access properties
+    const parsedObj = parsed as Record<string, unknown>;
+
+    // Validate required fields
+    if (!parsedObj.intent) {
+      errors.push('Missing required field: intent');
+    } else if (typeof parsedObj.intent !== 'string') {
+      errors.push('Field "intent" must be a string');
+    } else {
+      const validIntents = ['chitchat', 'session-analysis', 'session-suggest'];
+      if (!validIntents.includes(parsedObj.intent)) {
+        errors.push(`Invalid intent value: "${parsedObj.intent}". Must be one of: ${validIntents.join(', ')}`);
+      }
+    }
+
+    if (!parsedObj.response) {
+      errors.push('Missing required field: response');
+    } else if (typeof parsedObj.response !== 'string') {
+      errors.push('Field "response" must be a string');
+    } else if (parsedObj.response.trim().length === 0) {
+      errors.push('Field "response" cannot be empty');
+    }
+
+    // Validate typing-text field (can be null or string)
+    if (parsedObj.hasOwnProperty('typing-text')) {
+      const typingText = parsedObj['typing-text'];
+      if (typingText !== null && typeof typingText !== 'string') {
+        errors.push('Field "typing-text" must be null or a string');
+      }
+    } else {
+      errors.push('Missing required field: typing-text');
+    }
+
+    // Check for unexpected fields
+    const allowedFields = ['intent', 'typing-text', 'response'];
+    const unexpectedFields = Object.keys(parsedObj).filter(key => !allowedFields.includes(key));
+    if (unexpectedFields.length > 0) {
+      console.warn(`Unexpected fields in response: ${unexpectedFields.join(', ')}`);
+    }
+
+    return { isValid: errors.length === 0, errors };
+  }
+
+  /**
+   * Validates the final managed response after field management
+   */
+  private validateManagedResponse(response: StructuredAIResponse): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // Validate intent-specific typing-text rules
+    if (response.intent === 'chitchat' || response.intent === 'session-analysis') {
+      if (response['typing-text'] !== null) {
+        errors.push(`Intent "${response.intent}" must have null typing-text, but got: "${response['typing-text']}"`);
+      }
+    }
+
+    if (response.intent === 'session-suggest') {
+      if (response['typing-text'] !== null && typeof response['typing-text'] === 'string') {
+        // Validate typing text content
+        const typingText = response['typing-text'].trim();
+        if (typingText.length === 0) {
+          errors.push('Session-suggest intent has empty typing-text');
+        } else if (typingText.length > 1000) {
+          errors.push('Typing-text is too long (max 1000 characters)');
+        }
+      }
+      // Note: null typing-text for session-suggest will be handled in processIntentSpecificResponse
+    }
+
+    return { isValid: errors.length === 0, errors };
+  }
+
+  /**
+   * Determines if an error is retryable (parsing/format issues vs validation issues)
+   */
+  private isRetryableError(error: Error): boolean {
+    const retryablePatterns = [
+      /unexpected token/i,
+      /unexpected end of json/i,
+      /malformed json/i,
+      /invalid json/i,
+      /no valid json/i,
+      /json structure/i
+    ];
+
+    return retryablePatterns.some(pattern => pattern.test(error.message));
+  }
+
+  /**
+   * Attempts to repair common JSON formatting issues
+   */
+  private attemptJsonRepair(responseText: string): string | null {
+    try {
+      let repaired = responseText.trim();
+
+      // Common repairs
+      // 1. Fix missing quotes around field names
+      repaired = repaired.replace(/(\w+):/g, '"$1":');
+      
+      // 2. Fix single quotes to double quotes
+      repaired = repaired.replace(/'/g, '"');
+      
+      // 3. Fix trailing commas
+      repaired = repaired.replace(/,(\s*[}\]])/g, '$1');
+      
+      // 4. Ensure proper string escaping
+      repaired = repaired.replace(/\\n/g, '\\n').replace(/\\t/g, '\\t');
+
+      // 5. Try to extract just the JSON part if there's extra text
+      const jsonMatch = repaired.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        repaired = jsonMatch[0];
+      }
+
+      // Test if the repair worked
+      JSON.parse(repaired);
+      console.log('Successfully repaired malformed JSON');
+      return repaired;
+
+    } catch (repairError) {
+      console.warn('JSON repair attempt failed:', repairError);
+      return null;
+    }
+  }
+
+  /**
+   * Creates appropriate fallback response based on error type and context
+   */
+  private createFallbackResponse(error: Error, originalResponse: string): StructuredAIResponse {
+    // Try to infer intent from the original response text if possible
+    const inferredIntent = this.inferIntentFromText(originalResponse);
+    
+    // Create contextual fallback messages
+    const fallbackMessages = {
+      'chitchat': "I'm having trouble processing your request right now. I'm here to help you improve your typing skills! Try asking for a typing exercise, practice suggestions, or performance analysis.",
+      'session-analysis': "I couldn't analyze your performance data properly right now. Please try asking about your typing progress or request a performance review again.",
+      'session-suggest': "I had trouble generating an exercise for you. Please try asking for a typing exercise, specifying word count, or requesting key drills."
+    };
+
+    const fallbackResponse: StructuredAIResponse = {
+      intent: inferredIntent,
+      'typing-text': inferredIntent === 'session-suggest' ? null : null, // Will be handled by fallback generation if needed
+      response: fallbackMessages[inferredIntent]
+    };
+
+    // Log the error for debugging
+    console.error('Creating fallback response due to error:', {
+      error: error.message,
+      inferredIntent,
+      originalResponseLength: originalResponse.length,
+      originalResponsePreview: originalResponse.substring(0, 100)
+    });
+
+    return fallbackResponse;
+  }
+
+  /**
+   * Attempts to infer user intent from malformed AI response text
+   */
+  private inferIntentFromText(responseText: string): 'chitchat' | 'session-analysis' | 'session-suggest' {
+    const lowerText = responseText.toLowerCase();
+
+    // Look for session-suggest indicators
+    if (lowerText.includes('exercise') || lowerText.includes('practice') || 
+        lowerText.includes('typing-text') || lowerText.includes('drill') ||
+        lowerText.includes('challenge') || lowerText.includes('words')) {
+      return 'session-suggest';
+    }
+
+    // Look for session-analysis indicators
+    if (lowerText.includes('performance') || lowerText.includes('analysis') ||
+        lowerText.includes('wpm') || lowerText.includes('accuracy') ||
+        lowerText.includes('improvement') || lowerText.includes('progress')) {
+      return 'session-analysis';
+    }
+
+    // Default to chitchat for unclear cases
+    return 'chitchat';
   }
 
   /**
