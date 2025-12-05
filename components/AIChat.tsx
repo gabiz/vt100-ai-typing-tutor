@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { AIChatProps, ChatMessage } from '@/lib/types';
+import { AIChatProps, ChatMessage, StructuredAIResponse } from '@/lib/types';
 
 /**
  * AI Chat component that provides conversational interface for exercise generation
@@ -32,6 +32,9 @@ export const AIChat = forwardRef<
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Conversation history management - keep last 5 messages for context
+  const MAX_CONTEXT_MESSAGES = 5;
+
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -54,6 +57,57 @@ export const AIChat = forwardRef<
     }
   }), []);
 
+  /**
+   * Gets conversation history for AI context
+   * Implements requirement 8.1 for last 5 messages context management
+   * Excludes the initial welcome message from context
+   */
+  const getConversationHistory = (): ChatMessage[] => {
+    // Filter out the initial welcome message and get last 5 messages
+    const conversationMessages = messages.filter(msg => 
+      !(msg.role === 'assistant' && msg.content.includes('Ask for an "exercise" or "challenge"'))
+    );
+    
+    return conversationMessages.slice(-MAX_CONTEXT_MESSAGES);
+  };
+
+  /**
+   * Formats conversation history for display and context
+   * Implements requirement 8.2 for message display and formatting
+   */
+  const formatConversationForContext = (history: ChatMessage[]): string => {
+    if (history.length === 0) {
+      return 'No previous conversation history.';
+    }
+
+    return history.map(msg => {
+      const timestamp = msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const role = msg.role === 'user' ? 'User' : 'AI';
+      return `[${timestamp}] ${role}: ${msg.content}`;
+    }).join('\n');
+  };
+
+  /**
+   * Manages message history to prevent excessive memory usage
+   * Keeps a reasonable number of messages while maintaining context
+   */
+  const manageMessageHistory = (newMessages: ChatMessage[]): ChatMessage[] => {
+    const MAX_TOTAL_MESSAGES = 50; // Keep reasonable history for UI
+    
+    if (newMessages.length > MAX_TOTAL_MESSAGES) {
+      // Keep the initial welcome message and the most recent messages
+      const welcomeMessage = newMessages.find(msg => 
+        msg.role === 'assistant' && msg.content.includes('Ask for an "exercise" or "challenge"')
+      );
+      
+      const recentMessages = newMessages.slice(-MAX_TOTAL_MESSAGES + 1);
+      
+      return welcomeMessage ? [welcomeMessage, ...recentMessages] : recentMessages;
+    }
+    
+    return newMessages;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isThinking) return;
@@ -64,7 +118,8 @@ export const AIChat = forwardRef<
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => manageMessageHistory([...prev, userMessage]));
+    const currentInput = inputValue.trim();
     setInputValue('');
     setIsThinking(true);
     
@@ -74,106 +129,67 @@ export const AIChat = forwardRef<
     }
 
     try {
-      // Check if user is requesting an exercise
-      const isExerciseRequest = /(?:exercise|challenge|practice|text|generate|training|drill|lesson|advanced|beginner|intermediate)/i.test(inputValue);
+      // Use enhanced AI service with structured responses
+      const conversationHistory = getConversationHistory();
       
-      if (isExerciseRequest) {
-        // Generate exercise via API
-        const difficulty = extractDifficulty(inputValue);
-        const focusKeys = extractFocusKeys(inputValue);
-        
-        const response = await fetch('/api/ai', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'generateExercise',
-            prompt: inputValue,
-            difficulty,
-            focusKeys
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to generate exercise');
-        }
-        
-        onExerciseGenerated(result.data);
-        
-        const aiResponse: ChatMessage = {
-          role: 'assistant',
-          content: `Generated a ${difficulty} level exercise${focusKeys?.length ? ` focusing on keys: ${focusKeys.join(', ')}` : ''}. Start typing when ready!`,
-          timestamp: new Date()
-        };
-        
-        setMessages(prev => [...prev, aiResponse]);
-      } else {
-        // Regular chat response via API
-        const response = await fetch('/api/ai', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'chat',
-            message: inputValue,
-            context: performanceData,
-            lastSessionErrors
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to get chat response');
-        }
-        
-        const aiResponse: ChatMessage = {
-          role: 'assistant',
-          content: result.data,
-          timestamp: new Date()
-        };
-        
-        setMessages(prev => [...prev, aiResponse]);
+      // Debug logging for conversation context
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Sending conversation history:', conversationHistory.length, 'messages');
+        console.log('Context:', formatConversationForContext(conversationHistory));
       }
+      
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'chatWithUserEnhanced',
+          message: currentInput,
+          context: performanceData,
+          conversationHistory: conversationHistory,
+          lastSessionErrors
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to get enhanced chat response');
+      }
+      
+      const structuredResponse: StructuredAIResponse = result.data;
+      
+      // Handle structured response based on intent
+      await handleStructuredResponse(structuredResponse, currentInput);
+      
     } catch (error) {
-      console.error('AI chat error:', error);
+      console.error('Enhanced AI chat error:', error);
       
-      // Determine error type and message
-      let errorMessage = 'Sorry, I encountered an error. Please try again or ask for a typing exercise.';
-      
-      if (error instanceof Error) {
-        if (error.message.includes('network') || error.message.includes('fetch')) {
-          errorMessage = 'Network error: Please check your connection and try again.';
-        } else if (error.message.includes('rate limit')) {
-          errorMessage = 'Too many requests. Please wait a moment and try again.';
-        } else if (error.message.includes('timeout')) {
-          errorMessage = 'Request timed out. Please try again.';
+      // Fallback to legacy behavior for backward compatibility
+      try {
+        await handleLegacyFallback(currentInput);
+      } catch (fallbackError) {
+        console.error('Legacy fallback also failed:', fallbackError);
+        
+        // Final error handling
+        const errorMessage = createErrorMessage(error as Error);
+        const errorResponse: ChatMessage = {
+          role: 'assistant',
+          content: errorMessage,
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => manageMessageHistory([...prev, errorResponse]));
+        
+        // Notify parent component of the error
+        if (onError) {
+          onError(errorMessage);
         }
-      }
-      
-      const errorResponse: ChatMessage = {
-        role: 'assistant',
-        content: errorMessage,
-        timestamp: new Date()
-      };
-      
-      setMessages(prev => [...prev, errorResponse]);
-      
-      // Notify parent component of the error
-      if (onError) {
-        onError(errorMessage);
       }
     } finally {
       setIsThinking(false);
@@ -183,6 +199,155 @@ export const AIChat = forwardRef<
         onThinkingChange(false);
       }
     }
+  };
+
+  /**
+   * Handles structured AI responses with intent-based logic
+   * Implements requirements 1.2, 1.3, 1.4, 1.5 for intent-specific handling
+   */
+  const handleStructuredResponse = async (structuredResponse: StructuredAIResponse, originalMessage: string) => {
+    const { intent, 'typing-text': typingText, response } = structuredResponse;
+    
+    // Add AI response message
+    const aiResponse: ChatMessage = {
+      role: 'assistant',
+      content: response,
+      timestamp: new Date()
+    };
+    
+    setMessages(prev => manageMessageHistory([...prev, aiResponse]));
+    
+    // Handle intent-specific actions
+    switch (intent) {
+      case 'session-suggest':
+        // Generate typing exercise if typing-text is provided
+        if (typingText && typingText.trim()) {
+          const difficulty = extractDifficulty(originalMessage);
+          const focusKeys = extractFocusKeys(originalMessage);
+          
+          const exercise = {
+            id: crypto.randomUUID(),
+            text: typingText.trim(),
+            difficulty: difficulty as 'beginner' | 'intermediate' | 'advanced',
+            focusKeys,
+            generatedBy: 'ai' as const,
+            createdAt: new Date()
+          };
+          
+          onExerciseGenerated(exercise);
+        }
+        break;
+        
+      case 'chitchat':
+        // Chitchat responses redirect to typing practice - no additional action needed
+        // The AI response already contains the redirection message
+        break;
+        
+      case 'session-analysis':
+        // Performance analysis responses - no additional action needed
+        // The AI response already contains the analysis
+        break;
+        
+      default:
+        console.warn('Unknown intent received:', intent);
+        break;
+    }
+  };
+
+  /**
+   * Fallback to legacy chat behavior for backward compatibility
+   * Maintains existing functionality when enhanced service fails
+   */
+  const handleLegacyFallback = async (inputMessage: string) => {
+    console.log('Falling back to legacy chat behavior...');
+    
+    // Check if user is requesting an exercise using legacy logic
+    const isExerciseRequest = /(?:exercise|challenge|practice|text|generate|training|drill|lesson|advanced|beginner|intermediate)/i.test(inputMessage);
+    
+    if (isExerciseRequest) {
+      // Generate exercise via legacy API
+      const difficulty = extractDifficulty(inputMessage);
+      const focusKeys = extractFocusKeys(inputMessage);
+      
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'generateExercise',
+          prompt: inputMessage,
+          difficulty,
+          focusKeys
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to generate exercise');
+      }
+      
+      onExerciseGenerated(result.data);
+      
+      const aiResponse: ChatMessage = {
+        role: 'assistant',
+        content: `Generated a ${difficulty} level exercise${focusKeys?.length ? ` focusing on keys: ${focusKeys.join(', ')}` : ''}. Start typing when ready!`,
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => manageMessageHistory([...prev, aiResponse]));
+    } else {
+      // Regular chat response via legacy API
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'chat',
+          message: inputMessage,
+          context: performanceData,
+          lastSessionErrors
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to get chat response');
+      }
+      
+      const aiResponse: ChatMessage = {
+        role: 'assistant',
+        content: result.data,
+        timestamp: new Date()
+      };
+      
+      setMessages(prev => manageMessageHistory([...prev, aiResponse]));
+    }
+  };
+
+  /**
+   * Creates appropriate error messages based on error type
+   */
+  const createErrorMessage = (error: Error): string => {
+    if (error.message.includes('network') || error.message.includes('fetch')) {
+      return 'Network error: Please check your connection and try again.';
+    } else if (error.message.includes('rate limit')) {
+      return 'Too many requests. Please wait a moment and try again.';
+    } else if (error.message.includes('timeout')) {
+      return 'Request timed out. Please try again.';
+    }
+    return 'Sorry, I encountered an error. Please try again or ask for a typing exercise.';
   };
 
   const extractDifficulty = (input: string): string => {

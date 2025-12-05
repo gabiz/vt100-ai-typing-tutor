@@ -24,6 +24,15 @@ export async function POST(request: NextRequest) {
         const response = await aiService.chatWithUser(params.message, params.context, params.lastSessionErrors)
         return NextResponse.json({ success: true, data: response })
 
+      case 'chatWithUserEnhanced':
+        const enhancedResponse = await aiService.chatWithUserEnhanced(
+          params.message,
+          params.context,
+          params.conversationHistory || [],
+          params.lastSessionErrors
+        )
+        return NextResponse.json({ success: true, data: enhancedResponse })
+
       case 'analyzeSession':
         const sessionAnalysis = await aiService.analyzeSession(params.sessionData)
         return NextResponse.json({ success: true, data: sessionAnalysis })
