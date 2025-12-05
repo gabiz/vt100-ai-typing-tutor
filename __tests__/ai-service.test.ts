@@ -13,6 +13,7 @@ import { it } from 'zod/v4/locales'
 import { it } from 'zod/v4/locales'
 import { it } from 'zod/v4/locales'
 import { it } from 'zod/v4/locales'
+import { it } from 'zod/v4/locales'
 import { beforeEach } from 'node:test'
 import { describe } from 'yargs'
 import { AIServiceImpl } from '../lib/ai-service'
@@ -20,8 +21,17 @@ import fc from 'fast-check'
 
 // Mock the AI SDK to avoid making real API calls in tests
 jest.mock('ai', () => ({
-  generateText: jest.fn().mockResolvedValue({
-    text: 'This is a sample typing exercise for testing purposes.'
+  generateText: jest.fn().mockImplementation((params) => {
+    // Check if this is for the enhanced chat method based on system prompt
+    if (params.system && params.system.includes('JSON')) {
+      return Promise.resolve({
+        text: '{"intent": "session-suggest", "typing-text": "This is a sample typing exercise for testing purposes.", "response": "Here is your typing exercise!"}'
+      })
+    }
+    // Default mock for other methods
+    return Promise.resolve({
+      text: 'This is a sample typing exercise for testing purposes.'
+    })
   })
 }))
 
@@ -113,6 +123,31 @@ describe('AIService', () => {
 
     const response = await aiService.chatWithUser('What is the weather like?', mockHistory)
     expect(response).toContain('typing')
+  })
+
+  it('should handle enhanced chat with structured responses', async () => {
+    const mockHistory = {
+      sessions: [],
+      totalSessions: 5,
+      averageWPM: 45,
+      averageAccuracy: 92,
+      weakKeys: ['q', 'z'],
+      improvementTrend: 'improving' as const
+    }
+
+    const conversationHistory = [
+      { role: 'user' as const, content: 'Hello', timestamp: new Date() },
+      { role: 'assistant' as const, content: 'Hi there!', timestamp: new Date() }
+    ]
+
+    const response = await aiService.chatWithUserEnhanced('Give me a typing exercise', mockHistory, conversationHistory)
+    
+    expect(response).toHaveProperty('intent')
+    expect(response).toHaveProperty('typing-text')
+    expect(response).toHaveProperty('response')
+    expect(['chitchat', 'session-analysis', 'session-suggest']).toContain(response.intent)
+    expect(typeof response.response).toBe('string')
+    expect(response.response.length).toBeGreaterThan(0)
   })
 
   // Property-based tests

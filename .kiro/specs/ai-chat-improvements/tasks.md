@@ -37,14 +37,14 @@
     - **Property 6: Conversation Context Inclusion**
     - **Validates: Requirements 8.1, 8.4**
 
-- [ ] 4. Implement intent-specific response handling
-  - [ ] 4.1 Add intent classification and response logic
+- [x] 4. Implement intent-specific response handling
+  - [x] 4.1 Add intent classification and response logic
     - Implement chitchat response handling with typing focus redirection
     - Add session-analysis response with performance insights
     - Create session-suggest response with typing exercise generation
     - _Requirements: 1.2, 1.3, 1.4, 1.5_
 
-  - [ ] 4.2 Implement typing-text field management
+  - [x] 4.2 Implement typing-text field management
     - Ensure null typing-text for chitchat and session-analysis intents
     - Generate valid typing exercise content for session-suggest intent
     - _Requirements: 4.3, 4.4_
