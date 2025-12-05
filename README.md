@@ -4,8 +4,8 @@ A modern, AI-powered typing tutor that combines cutting-edge artificial intellig
 
 ![AI Typing Tutor Screenshot](blog/8%20-%20Final%20VT-100%20AI%20Typing%20Tutor.png)
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-repo/ai-typing-tutor)
-[![Test Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/your-repo/ai-typing-tutor)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/gabiz/vt100-ai-typing-tutor)
+[![Test Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/gabiz/vt100-ai-typing-tutor)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-blue)](https://reactjs.org/)
