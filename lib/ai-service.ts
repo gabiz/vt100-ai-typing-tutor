@@ -5,7 +5,8 @@ import {
   PerformanceHistory, 
   DifficultyLevel,
   StructuredAIResponse,
-  ChatMessage
+  ChatMessage,
+  SessionData
 } from './types'
 
 export class AIServiceImpl {
@@ -262,11 +263,14 @@ CHITCHAT RESPONSES:
 - Examples: "That's interesting! Let's focus on improving your typing skills. Would you like me to generate a practice exercise?" 
 
 SESSION-ANALYSIS RESPONSES:
-- Provide specific, actionable feedback based on performance data
-- Reference actual performance metrics when available
-- Identify patterns in errors and suggest targeted improvements
-- Offer encouragement while being constructive
-- Examples: "Based on your recent sessions, you're averaging X WPM with Y% accuracy. I notice you're struggling with the 'z' key - would you like a targeted drill?"
+- ALWAYS reference specific performance metrics provided in the context (WPM, accuracy, session count, trends)
+- Identify concrete patterns in errors and weak keys from the performance data
+- Provide actionable recommendations based on actual user data, not generic advice
+- Reference specific problematic keys and error patterns mentioned in the context
+- Suggest targeted practice methods for identified weak areas
+- Offer to generate specific exercises for problem keys or improvement areas
+- Use encouraging tone while being constructive and data-driven
+- Examples: "Your 15 sessions show 42 WPM average with 87% accuracy. The data shows consistent issues with 'q', 'p', and ';' keys (right pinky finger). I recommend targeted drills for right pinky positioning. Would you like me to create a specific exercise for these keys?"
 
 SESSION-SUGGEST RESPONSES:
 - Explain what type of exercise you're providing
@@ -337,7 +341,8 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   }
 
   /**
-   * Handles session-analysis intent responses with performance insights
+   * Handles session-analysis intent responses with comprehensive performance insights
+   * Implements requirements 7.1, 7.2, 7.3, 7.4 for performance analysis with context
    * Implements requirement 1.4 for session-analysis response with performance insights
    */
   private handleSessionAnalysisResponse(
@@ -353,28 +358,61 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
       }>;
     }
   ): StructuredAIResponse {
-    // Ensure typing-text is null for session-analysis
+    // Ensure typing-text is null for session-analysis per requirement 7.5
     let enhancedResponse = response.response;
 
-    // If we have specific performance data, ensure it's referenced
+    // Validate that AI response references actual performance metrics per requirement 7.1
     if (context.totalSessions > 0) {
-      const hasMetrics = response.response.includes(context.averageWPM.toString()) || 
-                        response.response.includes(context.averageAccuracy.toString());
+      const hasSpecificMetrics = this.validatePerformanceMetricsReference(response.response, context);
       
-      if (!hasMetrics) {
-        enhancedResponse = `Based on your ${context.totalSessions} sessions, you're averaging ${context.averageWPM} WPM with ${context.averageAccuracy}% accuracy. ${response.response}`;
+      if (!hasSpecificMetrics.hasWPM || !hasSpecificMetrics.hasAccuracy) {
+        // Enhance response with missing performance context
+        const metricsContext = `Based on your ${context.totalSessions} sessions, you're averaging ${context.averageWPM} WPM with ${context.averageAccuracy}% accuracy (${context.improvementTrend} trend).`;
+        enhancedResponse = `${metricsContext} ${response.response}`;
+      }
+
+      // Ensure specific improvement recommendations are included per requirement 7.3
+      const hasActionableRecommendations = this.validateActionableRecommendations(response.response);
+      if (!hasActionableRecommendations) {
+        const recommendations = this.generatePerformanceRecommendations(context, lastSessionErrors);
+        if (recommendations.length > 0) {
+          enhancedResponse += ` Here are specific areas to focus on: ${recommendations.slice(0, 2).join(', ')}.`;
+        }
       }
     }
 
-    // Add specific error insights if available
+    // Add specific error insights and practice suggestions per requirement 7.4
     if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
-      const problemKeys = Object.entries(lastSessionErrors.keyErrorMap)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 3)
-        .map(([key]) => key);
+      const errorAnalysis = this.analyzeSessionErrors(lastSessionErrors);
       
-      if (problemKeys.length > 0 && !response.response.includes(problemKeys[0])) {
-        enhancedResponse += ` I notice you're having trouble with the '${problemKeys.join("', '")}' keys. Would you like a targeted drill for these keys?`;
+      // Check if AI response already includes specific error analysis
+      const hasSpecificErrorAnalysis = errorAnalysis.problemKeys.some(keyInfo => 
+        response.response.toLowerCase().includes(keyInfo.split(' ')[0])
+      );
+      
+      if (!hasSpecificErrorAnalysis && errorAnalysis.problemKeys.length > 0) {
+        const topProblemKeys = errorAnalysis.problemKeys.slice(0, 3).map(keyInfo => keyInfo.split(' ')[0]);
+        enhancedResponse += ` Your last session showed specific issues with the '${topProblemKeys.join("', '")}' keys. I recommend practicing targeted drills for these keys to improve your accuracy.`;
+      }
+
+      // Add finger positioning insights if available
+      if (errorAnalysis.fingerPositionIssues.length > 0 && !response.response.toLowerCase().includes('finger')) {
+        const fingerIssue = errorAnalysis.fingerPositionIssues[0];
+        enhancedResponse += ` Focus on ${fingerIssue.split(' ')[0]} ${fingerIssue.split(' ')[1]} finger positioning to reduce errors.`;
+      }
+
+      // Add speed vs accuracy guidance
+      if (errorAnalysis.speedVsAccuracyBalance && !response.response.toLowerCase().includes('speed') && !response.response.toLowerCase().includes('accuracy')) {
+        enhancedResponse += ` ${errorAnalysis.speedVsAccuracyBalance}`;
+      }
+    }
+
+    // Ensure response suggests specific exercises or practice methods per requirement 7.4
+    if (!this.includesSpecificPracticeSuggestions(enhancedResponse)) {
+      if (context.weakKeys.length > 0) {
+        enhancedResponse += ` Would you like me to generate a targeted exercise focusing on your weak keys: ${context.weakKeys.slice(0, 3).join(', ')}?`;
+      } else {
+        enhancedResponse += ` Would you like me to create a practice exercise tailored to your current skill level?`;
       }
     }
 
@@ -383,6 +421,52 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
       'typing-text': null,
       response: enhancedResponse
     };
+  }
+
+  /**
+   * Validates that AI response references actual performance metrics
+   * Implements requirement 7.1 for examining user's performance history
+   */
+  private validatePerformanceMetricsReference(response: string, context: PerformanceHistory): {
+    hasWPM: boolean;
+    hasAccuracy: boolean;
+    hasTrend: boolean;
+  } {
+    const lowerResponse = response.toLowerCase();
+    
+    return {
+      hasWPM: lowerResponse.includes(context.averageWPM.toString()) || lowerResponse.includes('wpm'),
+      hasAccuracy: lowerResponse.includes(context.averageAccuracy.toString()) || lowerResponse.includes('accuracy'),
+      hasTrend: lowerResponse.includes(context.improvementTrend) || lowerResponse.includes('trend') || lowerResponse.includes('improving') || lowerResponse.includes('declining')
+    };
+  }
+
+  /**
+   * Validates that response includes actionable recommendations
+   * Implements requirement 7.3 for actionable recommendations
+   */
+  private validateActionableRecommendations(response: string): boolean {
+    const actionableKeywords = [
+      'practice', 'focus on', 'work on', 'try', 'exercise', 'drill', 
+      'improve', 'target', 'concentrate', 'emphasize', 'prioritize'
+    ];
+    
+    const lowerResponse = response.toLowerCase();
+    return actionableKeywords.some(keyword => lowerResponse.includes(keyword));
+  }
+
+  /**
+   * Checks if response includes specific practice suggestions
+   * Implements requirement 7.4 for specific exercises or practice methods
+   */
+  private includesSpecificPracticeSuggestions(response: string): boolean {
+    const practiceKeywords = [
+      'exercise', 'drill', 'practice', 'typing text', 'challenge',
+      'would you like', 'shall i generate', 'let me create'
+    ];
+    
+    const lowerResponse = response.toLowerCase();
+    return practiceKeywords.some(keyword => lowerResponse.includes(keyword));
   }
 
   /**
@@ -1155,8 +1239,9 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   }
 
   /**
-   * Formats performance context for AI prompting
-   * Includes performance data and session errors for analysis
+   * Formats performance context for AI prompting with comprehensive analysis
+   * Implements requirements 7.1, 7.2, 7.3, 7.4 for performance data integration
+   * Includes detailed performance data and session errors for intelligent analysis
    */
   private formatPerformanceContext(
     context: PerformanceHistory,
@@ -1170,43 +1255,372 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
       }>;
     }
   ): string {
-    let performanceInfo = context.totalSessions > 0 
-      ? `User has completed ${context.totalSessions} sessions with ${context.averageWPM} WPM average and ${context.averageAccuracy}% accuracy. Improvement trend: ${context.improvementTrend}.`
-      : 'New user with no typing history.';
-
-    if (context.weakKeys.length > 0) {
-      performanceInfo += ` Historically weak keys: ${context.weakKeys.join(', ')}.`;
+    if (context.totalSessions === 0) {
+      return 'PERFORMANCE CONTEXT: New user with no typing history. This is their first interaction with the typing tutor.';
     }
 
-    // Add last session error information if available
-    if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
-      const problemKeys = Object.entries(lastSessionErrors.keyErrorMap)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 5)
-        .map(([key, count]) => `${key} (${count} errors)`);
-      
-      performanceInfo += ` Last session problematic keys: ${problemKeys.join(', ')}.`;
-      
-      if (lastSessionErrors.detailedErrors.length > 0) {
-        const commonMistakes = lastSessionErrors.detailedErrors
-          .reduce((acc, error) => {
-            const mistake = `'${error.expected}' → '${error.typed}'`;
-            acc[mistake] = (acc[mistake] || 0) + 1;
-            return acc;
-          }, {} as Record<string, number>);
+    // Build comprehensive performance analysis context
+    let performanceInfo = `PERFORMANCE CONTEXT:
+User Statistics:
+- Total Sessions: ${context.totalSessions}
+- Average WPM: ${context.averageWPM}
+- Average Accuracy: ${context.averageAccuracy}%
+- Improvement Trend: ${context.improvementTrend}`;
 
-        const topMistakes = Object.entries(commonMistakes)
-          .sort(([,a], [,b]) => b - a)
-          .slice(0, 3)
-          .map(([mistake, count]) => `${mistake} (${count}x)`);
+    // Add historical weak keys analysis
+    if (context.weakKeys.length > 0) {
+      performanceInfo += `
+- Historically Weak Keys: ${context.weakKeys.join(', ')} (these keys consistently cause errors across sessions)`;
+    }
 
-        if (topMistakes.length > 0) {
-          performanceInfo += ` Common typing mistakes: ${topMistakes.join(', ')}.`;
-        }
+    // Add detailed session history analysis if available
+    if (context.sessions && context.sessions.length > 0) {
+      const recentSessions = context.sessions.slice(-5); // Last 5 sessions
+      const sessionAnalysis = this.analyzeRecentSessions(recentSessions);
+      
+      performanceInfo += `
+Recent Session Analysis (Last ${recentSessions.length} sessions):
+- WPM Range: ${sessionAnalysis.wpmRange.min}-${sessionAnalysis.wpmRange.max} (trend: ${sessionAnalysis.wpmTrend})
+- Accuracy Range: ${sessionAnalysis.accuracyRange.min}%-${sessionAnalysis.accuracyRange.max}% (trend: ${sessionAnalysis.accuracyTrend})
+- Most Consistent Errors: ${sessionAnalysis.consistentErrors.join(', ')}`;
+
+      if (sessionAnalysis.improvementAreas.length > 0) {
+        performanceInfo += `
+- Key Improvement Areas: ${sessionAnalysis.improvementAreas.join(', ')}`;
+      }
+
+      if (sessionAnalysis.strengthAreas.length > 0) {
+        performanceInfo += `
+- Strength Areas: ${sessionAnalysis.strengthAreas.join(', ')}`;
       }
     }
 
+    // Add last session detailed error analysis if available
+    if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
+      const errorAnalysis = this.analyzeSessionErrors(lastSessionErrors);
+      
+      performanceInfo += `
+
+LAST SESSION ERROR ANALYSIS:
+- Total Errors: ${Object.values(lastSessionErrors.keyErrorMap).reduce((a, b) => a + b, 0)}
+- Problematic Keys: ${errorAnalysis.problemKeys.join(', ')}
+- Error Patterns: ${errorAnalysis.errorPatterns.join(', ')}`;
+
+      if (errorAnalysis.fingerPositionIssues.length > 0) {
+        performanceInfo += `
+- Finger Position Issues: ${errorAnalysis.fingerPositionIssues.join(', ')}`;
+      }
+
+      if (errorAnalysis.speedVsAccuracyBalance) {
+        performanceInfo += `
+- Speed vs Accuracy: ${errorAnalysis.speedVsAccuracyBalance}`;
+      }
+    }
+
+    // Add specific recommendations context for AI to reference
+    const recommendations = this.generatePerformanceRecommendations(context, lastSessionErrors);
+    if (recommendations.length > 0) {
+      performanceInfo += `
+
+RECOMMENDED FOCUS AREAS:
+${recommendations.map(rec => `- ${rec}`).join('\n')}`;
+    }
+
+    performanceInfo += `
+
+ANALYSIS INSTRUCTIONS: Use this performance data to provide specific, actionable recommendations. Reference actual metrics and identify concrete improvement strategies based on the user's error patterns and performance trends.`;
+
     return performanceInfo;
+  }
+
+  /**
+   * Analyzes recent sessions to identify trends and patterns
+   * Implements requirement 7.2 for specific areas of improvement identification
+   */
+  private analyzeRecentSessions(sessions: SessionData[]): {
+    wpmRange: { min: number; max: number };
+    accuracyRange: { min: number; max: number };
+    wpmTrend: 'improving' | 'stable' | 'declining';
+    accuracyTrend: 'improving' | 'stable' | 'declining';
+    consistentErrors: string[];
+    improvementAreas: string[];
+    strengthAreas: string[];
+  } {
+    if (sessions.length === 0) {
+      return {
+        wpmRange: { min: 0, max: 0 },
+        accuracyRange: { min: 0, max: 0 },
+        wpmTrend: 'stable',
+        accuracyTrend: 'stable',
+        consistentErrors: [],
+        improvementAreas: [],
+        strengthAreas: []
+      };
+    }
+
+    // Calculate WPM and accuracy ranges
+    const wpms = sessions.map(s => s.metrics.wpm);
+    const accuracies = sessions.map(s => s.metrics.accuracy);
+    
+    const wpmRange = { min: Math.min(...wpms), max: Math.max(...wpms) };
+    const accuracyRange = { min: Math.min(...accuracies), max: Math.max(...accuracies) };
+
+    // Analyze trends (compare first half vs second half of sessions)
+    const midPoint = Math.floor(sessions.length / 2);
+    const firstHalfWPM = sessions.slice(0, midPoint).reduce((sum, s) => sum + s.metrics.wpm, 0) / midPoint;
+    const secondHalfWPM = sessions.slice(midPoint).reduce((sum, s) => sum + s.metrics.wpm, 0) / (sessions.length - midPoint);
+    const firstHalfAccuracy = sessions.slice(0, midPoint).reduce((sum, s) => sum + s.metrics.accuracy, 0) / midPoint;
+    const secondHalfAccuracy = sessions.slice(midPoint).reduce((sum, s) => sum + s.metrics.accuracy, 0) / (sessions.length - midPoint);
+
+    const wpmTrend = secondHalfWPM > firstHalfWPM * 1.05 ? 'improving' : 
+                     secondHalfWPM < firstHalfWPM * 0.95 ? 'declining' : 'stable';
+    const accuracyTrend = secondHalfAccuracy > firstHalfAccuracy * 1.02 ? 'improving' : 
+                          secondHalfAccuracy < firstHalfAccuracy * 0.98 ? 'declining' : 'stable';
+
+    // Identify consistent errors across sessions
+    const allErrors: Record<string, number> = {};
+    sessions.forEach(session => {
+      Object.entries(session.metrics.keyErrorMap).forEach(([key, count]) => {
+        allErrors[key] = (allErrors[key] || 0) + count;
+      });
+    });
+
+    const consistentErrors = Object.entries(allErrors)
+      .filter(([, count]) => count >= sessions.length * 0.6) // Appears in 60%+ of sessions
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([key]) => key);
+
+    // Identify improvement areas based on performance patterns
+    const improvementAreas: string[] = [];
+    const strengthAreas: string[] = [];
+
+    if (wpmRange.max - wpmRange.min > 15) {
+      improvementAreas.push('speed consistency');
+    }
+    if (accuracyRange.max - accuracyRange.min > 10) {
+      improvementAreas.push('accuracy consistency');
+    }
+    if (consistentErrors.length > 3) {
+      improvementAreas.push(`key accuracy (${consistentErrors.slice(0, 3).join(', ')})`);
+    }
+    if (wpmRange.max < 30) {
+      improvementAreas.push('overall typing speed');
+    }
+    if (accuracyRange.min < 85) {
+      improvementAreas.push('accuracy fundamentals');
+    }
+
+    // Identify strength areas
+    if (accuracyRange.min > 90) {
+      strengthAreas.push('high accuracy maintenance');
+    }
+    if (wpmRange.min > 40) {
+      strengthAreas.push('consistent speed');
+    }
+    if (wpmTrend === 'improving') {
+      strengthAreas.push('speed improvement');
+    }
+    if (accuracyTrend === 'improving') {
+      strengthAreas.push('accuracy improvement');
+    }
+
+    return {
+      wpmRange,
+      accuracyRange,
+      wpmTrend,
+      accuracyTrend,
+      consistentErrors,
+      improvementAreas,
+      strengthAreas
+    };
+  }
+
+  /**
+   * Analyzes session errors to identify specific patterns and issues
+   * Implements requirement 7.2 for specific areas of improvement identification
+   */
+  private analyzeSessionErrors(sessionErrors: {
+    keyErrorMap: Record<string, number>;
+    detailedErrors: Array<{
+      position: number;
+      expected: string;
+      typed: string;
+      timestamp: number;
+    }>;
+  }): {
+    problemKeys: string[];
+    errorPatterns: string[];
+    fingerPositionIssues: string[];
+    speedVsAccuracyBalance: string;
+  } {
+    // Identify most problematic keys
+    const problemKeys = Object.entries(sessionErrors.keyErrorMap)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([key, count]) => `${key} (${count} errors)`);
+
+    // Analyze error patterns from detailed errors
+    const errorPatterns: string[] = [];
+    const fingerPositionIssues: string[] = [];
+
+    if (sessionErrors.detailedErrors.length > 0) {
+      // Common substitution patterns
+      const substitutions: Record<string, number> = {};
+      sessionErrors.detailedErrors.forEach(error => {
+        const pattern = `'${error.expected}' → '${error.typed}'`;
+        substitutions[pattern] = (substitutions[pattern] || 0) + 1;
+      });
+
+      const topSubstitutions = Object.entries(substitutions)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([pattern, count]) => `${pattern} (${count}x)`);
+
+      if (topSubstitutions.length > 0) {
+        errorPatterns.push(...topSubstitutions);
+      }
+
+      // Analyze finger position issues based on keyboard layout
+      const fingerMap: Record<string, string> = {
+        'q': 'left pinky', 'w': 'left ring', 'e': 'left middle', 'r': 'left index', 't': 'left index',
+        'y': 'right index', 'u': 'right index', 'i': 'right middle', 'o': 'right ring', 'p': 'right pinky',
+        'a': 'left pinky', 's': 'left ring', 'd': 'left middle', 'f': 'left index', 'g': 'left index',
+        'h': 'right index', 'j': 'right index', 'k': 'right middle', 'l': 'right ring', ';': 'right pinky',
+        'z': 'left pinky', 'x': 'left ring', 'c': 'left middle', 'v': 'left index', 'b': 'left index',
+        'n': 'right index', 'm': 'right index', ',': 'right middle', '.': 'right ring', '/': 'right pinky'
+      };
+
+      const fingerErrors: Record<string, number> = {};
+      sessionErrors.detailedErrors.forEach(error => {
+        const expectedFinger = fingerMap[error.expected.toLowerCase()];
+        const typedFinger = fingerMap[error.typed.toLowerCase()];
+        if (expectedFinger && typedFinger && expectedFinger !== typedFinger) {
+          fingerErrors[expectedFinger] = (fingerErrors[expectedFinger] || 0) + 1;
+        }
+      });
+
+      const problemFingers = Object.entries(fingerErrors)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([finger, count]) => `${finger} (${count} errors)`);
+
+      if (problemFingers.length > 0) {
+        fingerPositionIssues.push(...problemFingers);
+      }
+    }
+
+    // Analyze speed vs accuracy balance
+    const totalErrors = Object.values(sessionErrors.keyErrorMap).reduce((a, b) => a + b, 0);
+    let speedVsAccuracyBalance = '';
+    
+    if (totalErrors > 20) {
+      speedVsAccuracyBalance = 'Focus on accuracy - too many errors suggest typing too fast';
+    } else if (totalErrors < 5) {
+      speedVsAccuracyBalance = 'Good accuracy - can focus on increasing speed';
+    } else {
+      speedVsAccuracyBalance = 'Balanced speed and accuracy - continue current approach';
+    }
+
+    return {
+      problemKeys,
+      errorPatterns,
+      fingerPositionIssues,
+      speedVsAccuracyBalance
+    };
+  }
+
+  /**
+   * Generates specific performance recommendations based on analysis
+   * Implements requirements 7.3, 7.4 for actionable recommendations and specific exercises
+   */
+  private generatePerformanceRecommendations(
+    context: PerformanceHistory,
+    lastSessionErrors?: {
+      keyErrorMap: Record<string, number>;
+      detailedErrors: Array<{
+        position: number;
+        expected: string;
+        typed: string;
+        timestamp: number;
+      }>;
+    }
+  ): string[] {
+    const recommendations: string[] = [];
+
+    // Speed-based recommendations
+    if (context.averageWPM < 25) {
+      recommendations.push('Focus on building basic typing speed through daily practice');
+    } else if (context.averageWPM < 40) {
+      recommendations.push('Work on increasing speed while maintaining accuracy above 90%');
+    } else if (context.averageWPM > 60) {
+      recommendations.push('Excellent speed - focus on maintaining consistency across different text types');
+    }
+
+    // Accuracy-based recommendations
+    if (context.averageAccuracy < 85) {
+      recommendations.push('Prioritize accuracy over speed - slow down and focus on correct key presses');
+    } else if (context.averageAccuracy < 95) {
+      recommendations.push('Good accuracy foundation - work on eliminating remaining error patterns');
+    }
+
+    // Weak keys recommendations
+    if (context.weakKeys.length > 0) {
+      const keyGroups = this.groupKeysByFinger(context.weakKeys);
+      Object.entries(keyGroups).forEach(([finger, keys]) => {
+        if (keys.length > 1) {
+          recommendations.push(`Practice ${finger} finger positioning with keys: ${keys.join(', ')}`);
+        }
+      });
+    }
+
+    // Trend-based recommendations
+    if (context.improvementTrend === 'declining') {
+      recommendations.push('Take a break and focus on fundamentals - accuracy and proper finger positioning');
+    } else if (context.improvementTrend === 'stable') {
+      recommendations.push('Try challenging exercises or different text types to break through the plateau');
+    }
+
+    // Last session specific recommendations
+    if (lastSessionErrors && Object.keys(lastSessionErrors.keyErrorMap).length > 0) {
+      const topErrorKeys = Object.entries(lastSessionErrors.keyErrorMap)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 3)
+        .map(([key]) => key);
+
+      if (topErrorKeys.length > 0) {
+        recommendations.push(`Practice targeted drills for your most problematic keys: ${topErrorKeys.join(', ')}`);
+      }
+    }
+
+    return recommendations;
+  }
+
+  /**
+   * Groups keys by finger for targeted practice recommendations
+   */
+  private groupKeysByFinger(keys: string[]): Record<string, string[]> {
+    const fingerMap: Record<string, string> = {
+      'q': 'left pinky', 'a': 'left pinky', 'z': 'left pinky',
+      'w': 'left ring', 's': 'left ring', 'x': 'left ring',
+      'e': 'left middle', 'd': 'left middle', 'c': 'left middle',
+      'r': 'left index', 'f': 'left index', 'v': 'left index', 't': 'left index', 'g': 'left index', 'b': 'left index',
+      'y': 'right index', 'h': 'right index', 'n': 'right index', 'u': 'right index', 'j': 'right index', 'm': 'right index',
+      'i': 'right middle', 'k': 'right middle', ',': 'right middle',
+      'o': 'right ring', 'l': 'right ring', '.': 'right ring',
+      'p': 'right pinky', ';': 'right pinky', '/': 'right pinky'
+    };
+
+    const groups: Record<string, string[]> = {};
+    keys.forEach(key => {
+      const finger = fingerMap[key.toLowerCase()];
+      if (finger) {
+        if (!groups[finger]) groups[finger] = [];
+        groups[finger].push(key);
+      }
+    });
+
+    return groups;
   }
 
   /**
