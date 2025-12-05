@@ -9,6 +9,7 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case 'generateExercise':
+        console.warn('generateExercise endpoint is deprecated. Use chatWithUserEnhanced instead.');
         const exercise = await aiService.generateExercise(
           params.prompt || 'Generate a typing exercise',
           params.difficulty || 'beginner',
@@ -17,6 +18,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true, data: exercise })
 
       case 'analyzePerformance':
+        console.warn('analyzePerformance endpoint is deprecated. Use chatWithUserEnhanced instead.');
         const analysis = await aiService.analyzePerformance(params.history)
         return NextResponse.json({ success: true, data: analysis })
 
@@ -31,6 +33,16 @@ export async function POST(request: NextRequest) {
           params.conversationHistory || [],
           params.lastSessionErrors
         )
+        
+        // Debug logging
+        console.log('🔍 API DEBUG: Enhanced response:', {
+          intent: enhancedResponse.intent,
+          hasTypingText: !!enhancedResponse['typing-text'],
+          typingTextLength: enhancedResponse['typing-text']?.length || 0,
+          typingTextPreview: enhancedResponse['typing-text']?.substring(0, 50) + '...',
+          responsePreview: enhancedResponse.response.substring(0, 100) + '...'
+        });
+        
         return NextResponse.json({ success: true, data: enhancedResponse })
 
       case 'analyzeSession':

@@ -47,8 +47,10 @@ interface EnhancedAIService {
     lastSessionErrors?: SessionErrorData
   ): Promise<StructuredAIResponse>;
   
-  // Existing methods (maintained for compatibility)
+  // Legacy methods (deprecated - maintained for backward compatibility only)
+  /** @deprecated Use chatWithUserEnhanced instead */
   generateExercise(prompt: string, difficulty: string, focusKeys?: string[]): Promise<TypingExercise>;
+  /** @deprecated Use chatWithUserEnhanced instead */
   analyzePerformance(history: PerformanceHistory): Promise<string>;
 }
 ```

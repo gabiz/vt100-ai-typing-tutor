@@ -111,6 +111,7 @@ export interface TypingProgress {
   correctChars: number;
   incorrectChars: number;
   timeElapsed: number;
+  keyErrorMap?: Record<string, number>; // Optional for backward compatibility
 }
 
 export interface StatsDisplayProps {
@@ -159,9 +160,25 @@ export type AIIntent = 'chitchat' | 'session-analysis' | 'session-suggest';
 // ============================================================================
 
 export interface AIService {
+  /** @deprecated Use chatWithUserEnhanced instead */
   generateExercise(prompt: string, difficulty: string, focusKeys?: string[]): Promise<TypingExercise>;
+  /** @deprecated Use chatWithUserEnhanced instead */
   analyzePerformance(history: PerformanceHistory): Promise<string>;
   chatWithUser(message: string, context: PerformanceHistory): Promise<string>;
+  chatWithUserEnhanced(
+    message: string,
+    context: PerformanceHistory,
+    conversationHistory?: ChatMessage[],
+    lastSessionErrors?: {
+      keyErrorMap: Record<string, number>;
+      detailedErrors: Array<{
+        position: number;
+        expected: string;
+        typed: string;
+        timestamp: number;
+      }>;
+    }
+  ): Promise<StructuredAIResponse>;
 }
 
 export interface StorageService {

@@ -148,9 +148,17 @@ interface PerformanceHistory {
 #### AIService
 ```typescript
 interface AIService {
+  /** @deprecated Use chatWithUserEnhanced instead */
   generateExercise(prompt: string, difficulty: string, focusKeys?: string[]): Promise<TypingExercise>;
+  /** @deprecated Use chatWithUserEnhanced instead */
   analyzePerformance(history: PerformanceHistory): Promise<string>;
   chatWithUser(message: string, context: PerformanceHistory): Promise<string>;
+  chatWithUserEnhanced(
+    message: string,
+    context: PerformanceHistory,
+    conversationHistory?: ChatMessage[],
+    lastSessionErrors?: SessionErrors
+  ): Promise<StructuredAIResponse>;
 }
 ```
 

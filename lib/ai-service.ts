@@ -13,7 +13,7 @@ export class AIServiceImpl {
   private anthropicClient = createAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
   })
-  private model = this.anthropicClient('claude-haiku-4-5-20251001')
+  private model = this.anthropicClient('claude-4-haiku-latest')
   
   // API failure tracking for graceful degradation
   private apiFailureCount = 0
@@ -21,153 +21,62 @@ export class AIServiceImpl {
   private readonly maxConsecutiveFailures = 3
   private readonly failureCooldownMs = 5 * 60 * 1000 // 5 minutes
 
+  /**
+   * @deprecated Use chatWithUserEnhanced instead. This method is maintained for backward compatibility only.
+   * The enhanced chat system provides better intent detection and structured responses.
+   */
   async generateExercise(
     prompt: string, 
     difficulty: string, 
     focusKeys?: string[]
   ): Promise<TypingExercise> {
-    // Check if this is a drill request for key practice
-    const isDrillRequest = /(?:drill|practice.*keys?|key.*drill|finger.*exercise)/i.test(prompt);
+    console.warn('generateExercise is deprecated. Use chatWithUserEnhanced for new implementations.');
     
-    if (isDrillRequest && focusKeys && focusKeys.length > 0) {
-      // Generate a key-focused drill instead of word-based text
-      return this.generateKeyDrill(focusKeys, difficulty);
-    }
-    
-    // Extract requested word count from prompt with enhanced validation
-    const requestedWordCount = this.extractWordCount(prompt);
-    const targetWords = requestedWordCount || this.getDefaultWordCount();
-
-    // Use graceful degradation wrapper for AI calls
-    return await this.callAIWithFallback(
-      // AI call
-      async () => {
-        const systemPrompt = `You are a typing exercise generator. Generate ONLY the text content that users should type for practice.
-
-        CRITICAL WORD COUNT REQUIREMENTS - ABSOLUTE PRECISION REQUIRED:
-        - Generate EXACTLY ${targetWords} words - this is MANDATORY and NON-NEGOTIABLE
-        - Count every single word as you write: 1, 2, 3... up to ${targetWords} then STOP IMMEDIATELY
-        - NEVER generate ${targetWords + 1} or ${targetWords - 1} words - EXACTLY ${targetWords} words
-        - Word count precision is the PRIMARY requirement - everything else is secondary
-        - If user requested specific count, it MUST be followed with absolute precision
-        - Validate your word count before responding - count each word individually
-        
-        RESPONSE FORMAT RULES:
-        - Respond with ONLY the typing exercise text, no explanations or instructions
-        - Do NOT include phrases like "Here's your exercise" or "Practice typing this"
-        - No introductory or concluding remarks - ONLY the exercise text
-        
-        CHARACTER AND CONTENT RULES:
-        - ONLY use standard keyboard characters: letters (a-z, A-Z), numbers (0-9), and basic punctuation
-        - NEVER use special symbols like °, ©, ®, €, £, ™, or any Unicode characters
-        - Allowed punctuation: . , ! ? ; : " ' - ( ) / @ # $ % & *
-        - Make the content appropriate for the difficulty level
-        - If focusKeys are specified, use those letters HEAVILY - at least 50% of the text should contain focus keys
-        - When focus keys are provided, create words and sentences that specifically practice those letters
-        
-        WORD COUNT VALIDATION PROCESS:
-        1. Write your text
-        2. Count the words by splitting on spaces: word1 word2 word3...
-        3. Verify the count equals EXACTLY ${targetWords}
-        4. If not exactly ${targetWords}, adjust immediately
-        5. Double-check before responding
-        
-        TARGET: EXACTLY ${targetWords} WORDS (${requestedWordCount ? 'USER REQUESTED' : 'DEFAULT RANGE'})
-        
-        Difficulty levels:
-        - beginner: Simple words, basic punctuation (. , ! ?), EXACTLY ${targetWords} words
-        - intermediate: Mixed case, common punctuation (; : " ' -), EXACTLY ${targetWords} words  
-        - advanced: Complex vocabulary, keyboard symbols (@ # $ % & *), technical terms, EXACTLY ${targetWords} words`
-
-        const userPrompt = focusKeys 
-          ? `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. FOCUS KEYS: ${focusKeys.join(', ')} - use these letters HEAVILY throughout the text. Create ${difficulty} typing text with many words containing ${focusKeys.join(', ')}. Examples: ${focusKeys.includes('e') ? 'exercise, element, energy' : ''} ${focusKeys.includes('n') ? 'nature, number, engine' : ''}. Theme: ${prompt}. CRITICAL: EXACTLY ${targetWords} words and HEAVY use of focus keys.`
-          : `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. Count: 1, 2, 3... up to ${targetWords} then STOP. Create ${difficulty} level typing text. Theme: ${prompt}. REQUIREMENT: EXACTLY ${targetWords} words - not ${targetWords - 1}, not ${targetWords + 1}, but EXACTLY ${targetWords}.`
-
-        const { text } = await generateText({
-          model: this.model,
-          system: systemPrompt,
-          prompt: userPrompt,
-        })
-
-        // Validate that the response is appropriate for typing practice
-        if (this.isOffTopic(text)) {
-          throw new Error('Generated content is not suitable for typing practice')
-        }
-
-        // Validate that only standard keyboard characters are used
-        if (this.hasInvalidCharacters(text)) {
-          console.warn('Generated text contains invalid characters, using fallback');
-          return this.getFallbackExercise(difficulty, focusKeys, targetWords);
-        }
-
-        // Enhanced word count validation using new validation method
-        const validation = this.validateWordCount(text, requestedWordCount);
-        
-        if (!validation.isValid) {
-          console.warn(validation.message);
-          
-          // For significant deviations (more than 20% off), use fallback
-          const deviationPercentage = Math.abs(validation.actualCount - targetWords) / targetWords;
-          if (deviationPercentage > 0.2) {
-            console.warn(`Word count deviation too high (${Math.round(deviationPercentage * 100)}%), using fallback exercise`);
-            // Return fallback exercise instead of throwing error
-            return this.getFallbackExercise(difficulty, focusKeys, targetWords);
-          }
-        }
-
-        return {
-          id: crypto.randomUUID(),
-          text: text.trim(),
-          difficulty: difficulty as DifficultyLevel,
-          focusKeys,
-          generatedBy: 'ai',
-          createdAt: new Date()
-        }
+    // For backward compatibility, use the enhanced system internally
+    const enhancedResponse = await this.chatWithUserEnhanced(
+      `Generate a ${difficulty} typing exercise: ${prompt}${focusKeys ? ` focusing on keys: ${focusKeys.join(', ')}` : ''}`,
+      { 
+        sessions: [], 
+        totalSessions: 0, 
+        averageWPM: 0, 
+        averageAccuracy: 0, 
+        weakKeys: [], 
+        improvementTrend: 'stable' 
       },
-      // Fallback call
-      async () => {
-        console.log('Using fallback exercise generation due to AI service unavailability');
-        return this.getFallbackExercise(difficulty, focusKeys, targetWords);
-      },
-      'generateExercise'
+      []
     );
+
+    // Convert enhanced response to legacy format
+    if (enhancedResponse.intent === 'session-suggest' && enhancedResponse['typing-text']) {
+      return {
+        id: crypto.randomUUID(),
+        text: enhancedResponse['typing-text'],
+        difficulty: difficulty as DifficultyLevel,
+        focusKeys,
+        generatedBy: 'ai',
+        createdAt: new Date()
+      };
+    }
+
+    // Fallback to preset exercise if enhanced system doesn't provide typing text
+    return this.getFallbackExercise(difficulty, focusKeys);
   }
 
+  /**
+   * @deprecated Use chatWithUserEnhanced instead. This method is maintained for backward compatibility only.
+   * The enhanced chat system provides better performance analysis with structured responses.
+   */
   async analyzePerformance(history: PerformanceHistory): Promise<string> {
-    return await this.callAIWithFallback(
-      // AI call
-      async () => {
-        const systemPrompt = `You are a typing tutor AI. Analyze the user's typing performance and provide helpful improvement suggestions.
-        
-        Focus on:
-        - Identifying patterns in errors
-        - Suggesting specific practice areas
-        - Encouraging progress
-        - Providing actionable advice`
-
-        const performanceData = `
-        Total sessions: ${history.totalSessions}
-        Average WPM: ${history.averageWPM}
-        Average accuracy: ${history.averageAccuracy}%
-        Weak keys: ${history.weakKeys.join(', ')}
-        Trend: ${history.improvementTrend}
-        `
-
-        const { text } = await generateText({
-          model: this.model,
-          system: systemPrompt,
-          prompt: `Analyze this typing performance data and provide improvement suggestions: ${performanceData}`,
-        })
-
-        return text.trim()
-      },
-      // Fallback call
-      async () => {
-        console.log('Using fallback performance analysis due to AI service unavailability');
-        return this.createFallbackPerformanceAnalysis(history);
-      },
-      'analyzePerformance'
+    console.warn('analyzePerformance is deprecated. Use chatWithUserEnhanced for new implementations.');
+    
+    // For backward compatibility, use the enhanced system internally
+    const enhancedResponse = await this.chatWithUserEnhanced(
+      'Analyze my typing performance and provide improvement suggestions',
+      history,
+      []
     );
+
+    return enhancedResponse.response;
   }
 
   /**
@@ -235,6 +144,12 @@ export class AIServiceImpl {
       }>;
     }
   ): Promise<StructuredAIResponse> {
+    console.log('🔍 DEBUG: chatWithUserEnhanced called with:', {
+      message,
+      hasApiKey: !!process.env.ANTHROPIC_API_KEY,
+      apiKeyLength: process.env.ANTHROPIC_API_KEY?.length || 0
+    });
+
     const maxRetries = 2;
     let lastError: Error | null = null;
 
@@ -265,10 +180,17 @@ Respond with valid JSON following the exact format specified in the system promp
           ? `${userPrompt}\n\nIMPORTANT: Previous response had formatting issues. Ensure your response is ONLY valid JSON with no additional text before or after the JSON object.`
           : userPrompt;
 
+        console.log('🔍 DEBUG: Making AI call with model:', this.model);
+        
         const { text } = await generateText({
           model: this.model,
           system: systemPrompt,
           prompt: finalPrompt,
+        });
+
+        console.log('🔍 DEBUG: AI response received:', {
+          textLength: text.length,
+          textPreview: text.substring(0, 200)
         });
 
         // Parse and validate JSON response with retry tracking
@@ -286,7 +208,13 @@ Respond with valid JSON following the exact format specified in the system promp
 
       } catch (error) {
         lastError = error as Error;
-        console.error(`Enhanced chat attempt ${attempt + 1} failed:`, error);
+        const err = error as Error;
+        console.error(`🔍 DEBUG: Enhanced chat attempt ${attempt + 1} failed:`, {
+          errorMessage: err.message,
+          errorType: err.constructor.name,
+          isApiFailure: this.isApiFailure(err),
+          isRetryable: this.isRetryableAIError(err)
+        });
         
         // If this is not the last attempt and the error suggests a retryable issue, continue
         if (attempt < maxRetries && this.isRetryableAIError(error as Error)) {
@@ -375,17 +303,26 @@ Respond with valid JSON following the exact format specified in the system promp
   private createStaticFallbackResponse(message: string, context: PerformanceHistory): StructuredAIResponse {
     const intent = this.classifyMessageIntent(message);
     
+    // For session-suggest intents, generate typing text even in fallback mode
+    let typingText: string | null = null;
+    if (intent === 'session-suggest') {
+      const wordCount = this.extractWordCount(message) || this.getDefaultWordCount();
+      typingText = this.generateFallbackTypingText(wordCount, message);
+    }
+    
     const responses = {
       'chitchat': `${this.createServiceUnavailableMessage('chat')} I can still provide basic typing guidance and preset exercises.`,
       'session-analysis': context.totalSessions > 0 
         ? `${this.createServiceUnavailableMessage('analysis')} Your current stats: ${context.averageWPM} WPM, ${context.averageAccuracy}% accuracy over ${context.totalSessions} sessions.`
         : `${this.createServiceUnavailableMessage('analysis')} Start practicing to build your typing history!`,
-      'session-suggest': `${this.createServiceUnavailableMessage('exercise')} Try asking for a 'preset exercise' or specify difficulty like 'beginner exercise'.`
+      'session-suggest': typingText 
+        ? `Here's a ${typingText.split(' ').length}-word exercise for you to practice. Focus on accuracy first!`
+        : `${this.createServiceUnavailableMessage('exercise')} Try asking for a 'preset exercise' or specify difficulty like 'beginner exercise'.`
     };
 
     return {
       intent,
-      'typing-text': null,
+      'typing-text': typingText,
       response: responses[intent]
     };
   }
@@ -581,17 +518,26 @@ TYPING TEXT GENERATION RULES:
 - Regular exercises: Use standard keyboard characters only
 - Validate word count precision - count every word carefully
 
-KEY DRILL GENERATION RULES (when user requests key drills):
-- DETECT key drill requests: "drill keys a s d", "practice f j keys", "key exercise a s d f"
-- When key drill is requested, classify intent as "session-suggest"
-- Use ONLY the specified keys plus spaces - NO OTHER CHARACTERS ALLOWED
-- Create varied patterns and combinations using exclusively the target keys
-- Generate sequences like "asaa dass dsdsd" for keys a,s,d
-- Form different patterns: single key repetition, alternating keys, combinations
-- Examples for keys [a,s,d]: "aaa sss ddd", "asa sds dad", "asad sdas dasd"
-- CRITICAL: Verify that EVERY character (except spaces) is from the specified key set
-- Generate 50-100 character sequences separated by spaces
-- If no specific keys mentioned in drill request, use common problem keys: a,s,d,f
+THEME HANDLING RULES (HIGH PRIORITY):
+- DETECT theme requests: "cooking theme", "sports theme", "nature theme", "technology theme", etc.
+- When a theme is mentioned, create typing text that matches that theme
+- Use vocabulary, concepts, and scenarios related to the requested theme
+- Examples:
+  * Cooking theme: "Fresh ingredients make delicious meals. Chop vegetables carefully and season with herbs."
+  * Sports theme: "Athletes train daily to improve their performance. Practice makes perfect in every sport."
+  * Nature theme: "Birds sing in the morning while flowers bloom in the garden under bright sunlight."
+- ALWAYS incorporate the theme into the actual typing text content
+- The theme should be the PRIMARY focus of the text content
+
+KEY DRILL GENERATION RULES (HIGHEST PRIORITY):
+- DETECT key drill requests: "drill", "practice keys", "key exercise", "drill with [letters]"
+- When ANY drill is requested, classify intent as "session-suggest"
+- EXTRACT the specific keys from the user message (e.g., "a s d f" from "drill with a s d f")
+- Use ONLY the specified keys plus spaces - ABSOLUTELY NO OTHER CHARACTERS
+- Generate ONLY drill patterns like: "aaa sss ddd", "asa dad sas", "asad sdas"
+- NEVER generate normal sentences or words for drill requests
+- Example for "drill with a s d": typing-text should be "aaa sss ddd asa dad sas asad sdas"
+- CRITICAL: If user says "drill", the typing-text MUST be drill patterns, NOT sentences
 
 RESPONSE GUIDELINES FOR EACH INTENT:
 
@@ -612,10 +558,10 @@ SESSION-ANALYSIS RESPONSES:
 - Examples: "Your 15 sessions show 42 WPM average with 87% accuracy. The data shows consistent issues with 'q', 'p', and ';' keys (right pinky finger). I recommend targeted drills for right pinky positioning. Would you like me to create a specific exercise for these keys?"
 
 SESSION-SUGGEST RESPONSES:
-- Explain what type of exercise you're providing
-- Encourage practice and provide context for the exercise
-- Mention any specific focus areas or techniques
-- Examples: "Here's a 40-word intermediate exercise focusing on common letter combinations. Take your time and focus on accuracy first!"
+- Keep responses SHORT and encouraging (1-2 sentences maximum)
+- For drills: "Here's a drill for [keys]. Focus on accuracy!"
+- For exercises: "Here's a [X]-word exercise. Take your time!"
+- Examples: "Here's your drill for a, s, d keys. Focus on smooth finger movements!"
 
 CRITICAL: Always return valid JSON. Do not include any text outside the JSON structure.`;
   }
@@ -825,6 +771,7 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
 
     // Validate that typing-text is provided for session-suggest
     if (!response['typing-text']) {
+      console.warn('🔍 DEBUG: No typing-text provided by AI, generating fallback');
       // Generate fallback typing text if missing using enhanced extraction
       const wordCount = this.extractWordCount(originalMessage) || this.getDefaultWordCount();
       const fallbackText = this.generateFallbackTypingText(wordCount, originalMessage);
@@ -836,13 +783,26 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
       };
     }
 
+    console.log('🔍 DEBUG: AI provided typing-text:', {
+      length: response['typing-text'].length,
+      preview: response['typing-text'].substring(0, 100) + '...'
+    });
+
     // Enhanced word count validation using new validation method
     const requestedWordCount = this.extractWordCount(originalMessage);
     if (requestedWordCount && response['typing-text']) {
       const validation = this.validateWordCount(response['typing-text'], requestedWordCount);
       
+      console.log('🔍 DEBUG: Word count validation:', {
+        requestedWordCount,
+        actualWordCount: validation.actualCount,
+        isValid: validation.isValid,
+        message: validation.message,
+        originalTypingText: response['typing-text']?.substring(0, 100) + '...'
+      });
+      
       if (!validation.isValid) {
-        console.warn(validation.message);
+        console.warn('🔍 DEBUG: Word count validation failed, using fallback text');
         // Generate corrected typing text using enhanced fallback
         const correctedText = this.generateFallbackTypingText(requestedWordCount, originalMessage);
         return {
@@ -1453,111 +1413,9 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     return extendedText;
   }
 
-  private generateKeyDrill(focusKeys: string[], difficulty: string): TypingExercise {
-    const keys = focusKeys.slice(0, 5); // Limit to 5 keys max
-    let drillText = '';
-    
-    // Generate different drill patterns based on difficulty
-    switch (difficulty) {
-      case 'beginner':
-        // Simple key repetition and basic combinations
-        drillText = this.generateBeginnerKeyDrill(keys);
-        break;
-      case 'advanced':
-        // Complex patterns and combinations
-        drillText = this.generateAdvancedKeyDrill(keys);
-        break;
-      default: // intermediate
-        // Moderate patterns with some combinations
-        drillText = this.generateIntermediateKeyDrill(keys);
-    }
-    
-    return {
-      id: crypto.randomUUID(),
-      text: drillText,
-      difficulty: difficulty as DifficultyLevel,
-      focusKeys: keys,
-      generatedBy: 'ai',
-      createdAt: new Date()
-    };
-  }
 
-  private generateBeginnerKeyDrill(keys: string[]): string {
-    const patterns = [];
-    
-    // Individual key repetition
-    keys.forEach(key => {
-      patterns.push(`${key} ${key} ${key} ${key} ${key}`);
-    });
-    
-    // Simple alternating patterns
-    if (keys.length >= 2) {
-      patterns.push(`${keys[0]} ${keys[1]} ${keys[0]} ${keys[1]} ${keys[0]} ${keys[1]}`);
-    }
-    
-    // Basic combinations
-    keys.forEach(key => {
-      patterns.push(`${key}a ${key}e ${key}i ${key}o ${key}u`);
-    });
-    
-    return patterns.join(' ').substring(0, 200); // Keep it reasonable length
-  }
 
-  private generateIntermediateKeyDrill(keys: string[]): string {
-    const patterns = [];
-    
-    // Key combinations with common letters
-    const commonLetters = ['a', 'e', 'i', 'o', 'u', 't', 'h', 's', 'r'];
-    
-    keys.forEach(key => {
-      // Create patterns like "en ne en ne" for key 'n'
-      commonLetters.slice(0, 3).forEach(letter => {
-        patterns.push(`${key}${letter} ${letter}${key} ${key}${letter} ${letter}${key}`);
-      });
-    });
-    
-    // Multi-key combinations
-    if (keys.length >= 2) {
-      for (let i = 0; i < keys.length - 1; i++) {
-        patterns.push(`${keys[i]}${keys[i+1]} ${keys[i+1]}${keys[i]} ${keys[i]}${keys[i+1]}`);
-      }
-    }
-    
-    return patterns.join(' ').substring(0, 200);
-  }
 
-  private generateAdvancedKeyDrill(keys: string[]): string {
-    const patterns = [];
-    
-    // Complex finger patterns and sequences
-    keys.forEach(key => {
-      // Rapid alternation patterns
-      patterns.push(`${key}${key}${key} ${key}a${key} ${key}e${key} ${key}i${key}`);
-      
-      // Mixed case if advanced
-      patterns.push(`${key}${key.toUpperCase()}${key} ${key.toUpperCase()}${key}${key.toUpperCase()}`);
-    });
-    
-    // Complex multi-key sequences
-    if (keys.length >= 3) {
-      const seq1 = `${keys[0]}${keys[1]}${keys[2]}`;
-      const seq2 = `${keys[2]}${keys[1]}${keys[0]}`;
-      patterns.push(`${seq1} ${seq2} ${seq1} ${seq2}`);
-    }
-    
-    // Challenging combinations with punctuation
-    keys.forEach(key => {
-      patterns.push(`${key}, ${key}. ${key}; ${key}:`);
-    });
-    
-    return patterns.join(' ').substring(0, 200);
-  }
-
-  private hasInvalidCharacters(text: string): boolean {
-    // Define allowed characters: letters, numbers, spaces, and basic punctuation
-    const allowedChars = /^[a-zA-Z0-9\s.,!?;:'"()\-\/@#$%&*\n\r]+$/;
-    return !allowedChars.test(text);
-  }
 
   async analyzeSession(sessionData: {
     wpm: number;
@@ -1576,16 +1434,17 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     return await this.callAIWithFallback(
       // AI call
       async () => {
-        const systemPrompt = `You are a typing performance analyst. Provide a concise but insightful session summary in 2-3 sentences.
+        const systemPrompt = `You are a typing performance analyst. Provide a VERY concise session summary in exactly 4 continuous lines of text.
 
-        CRITICAL: Use the EXACT error data provided - do not give generic responses.
+        CRITICAL REQUIREMENTS:
+        - Write exactly 4 lines of continuous text (NOT bullet points or lists)
+        - Line 1: "Session complete: X WPM at Y% accuracy"
+        - Line 2: "Problem keys: [list the specific keys from error data]"
+        - Line 3: "These keys caused [number] errors total"
+        - Line 4: "Try a drill with: [same keys] keys"
         
-        Focus on:
-        - Overall performance (WPM and accuracy)
-        - SPECIFIC keys that caused errors (use the "Most problematic keys" and "Common mistakes" data)
-        - Mention the exact keys the user struggled with by name
-        - Actionable improvement suggestions based on actual errors
-        - Offer to generate targeted practice exercises for the problematic keys`
+        MUST USE EXACT ERROR DATA from keyErrorMap - mention specific keys by name.
+        NO bullet points, NO lists, NO formatting - just 4 plain text lines.`
 
         const errorKeys = Object.entries(sessionData.keyErrorMap)
           .sort(([,a], [,b]) => b - a)
@@ -1664,31 +1523,24 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     }>;
     exerciseText?: string;
   }): string {
-    let analysis = `Session complete! ${sessionData.wpm} WPM at ${sessionData.accuracy.toFixed(1)}% accuracy. `;
-
-    // Analyze error patterns
+    // Keep fallback analysis concise - 4 lines max
     const errorKeys = Object.entries(sessionData.keyErrorMap)
       .sort(([,a], [,b]) => b - a)
       .slice(0, 3)
       .map(([key]) => key);
 
+    let analysis = `Session: ${sessionData.wpm} WPM, ${sessionData.accuracy.toFixed(1)}% accuracy\n`;
+
     if (errorKeys.length > 0) {
-      analysis += `Your most challenging keys were: ${errorKeys.join(', ')}. `;
-      
-      // Provide specific advice based on error count
-      const totalKeyErrors = errorKeys.reduce((sum, key) => sum + sessionData.keyErrorMap[key], 0);
-      if (totalKeyErrors > 10) {
-        analysis += "Focus on accuracy with these keys - practice them slowly and deliberately. ";
-      } else if (totalKeyErrors > 5) {
-        analysis += "Practice targeted drills for these keys to improve consistency. ";
-      } else {
-        analysis += "Minor issues with these keys - keep practicing to eliminate remaining errors. ";
-      }
+      analysis += `Problem keys: ${errorKeys.join(', ')} (${errorKeys.reduce((sum, key) => sum + sessionData.keyErrorMap[key], 0)} errors)\n`;
+      analysis += `Focus on finger placement for these keys\n`;
+      analysis += `Try a drill with: ${errorKeys.join(', ')} keys`;
     } else {
-      analysis += "Excellent accuracy with no significant problem keys! ";
+      analysis += `Great accuracy! No major problem keys identified\n`;
+      analysis += `Keep practicing to maintain consistency`;
     }
 
-    // Performance feedback
+    return analysis;
     if (sessionData.accuracy < 85) {
       analysis += "Prioritize accuracy over speed in your next session.";
     } else if (sessionData.accuracy < 95) {
@@ -2117,14 +1969,32 @@ ANALYSIS INSTRUCTIONS: Use this performance data to provide specific, actionable
       // Clean the response text to extract JSON
       const cleanedText = responseText.trim();
       
+      // Debug logging
+      console.log('🔍 DEBUG: Parsing response text:', {
+        originalLength: responseText.length,
+        cleanedLength: cleanedText.length,
+        preview: cleanedText.substring(0, 200)
+      });
+      
       // Enhanced JSON extraction with multiple strategies
       const jsonText = this.extractJsonFromResponse(cleanedText);
+      
+      console.log('🔍 DEBUG: Extracted JSON:', {
+        found: !!jsonText,
+        jsonText: jsonText?.substring(0, 200)
+      });
       
       if (!jsonText) {
         throw new Error('No valid JSON structure found in response');
       }
       
       const parsed = JSON.parse(jsonText);
+      
+      console.log('🔍 DEBUG: Parsed JSON:', {
+        intent: parsed.intent,
+        hasTypingText: !!parsed['typing-text'],
+        typingTextLength: parsed['typing-text']?.length || 0
+      });
 
       // Comprehensive field validation
       const validationResult = this.validateResponseStructure(parsed);
@@ -2356,10 +2226,21 @@ ANALYSIS INSTRUCTIONS: Use this performance data to provide specific, actionable
       'session-suggest': "I had trouble generating an exercise for you. Please try asking for a typing exercise, specifying word count, or requesting key drills."
     };
 
+    // Generate typing text for session-suggest intents even in fallback
+    let typingText: string | null = null;
+    if (inferredIntent === 'session-suggest') {
+      // Try to extract word count from original response or use default
+      const wordCountMatch = originalResponse.match(/(\d+)\s*words?/i);
+      const wordCount = wordCountMatch ? parseInt(wordCountMatch[1]) : this.getDefaultWordCount();
+      typingText = this.generateFallbackTypingText(wordCount, originalResponse);
+    }
+
     const fallbackResponse: StructuredAIResponse = {
       intent: inferredIntent,
-      'typing-text': inferredIntent === 'session-suggest' ? null : null, // Will be handled by fallback generation if needed
-      response: fallbackMessages[inferredIntent]
+      'typing-text': typingText,
+      response: typingText ? 
+        `Here's a ${typingText.split(' ').length}-word exercise for you to practice.` :
+        fallbackMessages[inferredIntent]
     };
 
     // Log the error for debugging
@@ -2405,6 +2286,12 @@ ANALYSIS INSTRUCTIONS: Use this performance data to provide specific, actionable
     const intent = parsed.intent as 'chitchat' | 'session-analysis' | 'session-suggest';
     let typingText = parsed['typing-text'];
 
+    console.log('🔍 DEBUG: Managing typing text field:', {
+      intent,
+      originalTypingText: typingText,
+      hasTypingText: !!typingText
+    });
+
     // Rule: Ensure null typing-text for chitchat and session-analysis intents
     if (intent === 'chitchat' || intent === 'session-analysis') {
       if (typingText !== null && typingText !== undefined && typingText !== '') {
@@ -2421,15 +2308,29 @@ ANALYSIS INSTRUCTIONS: Use this performance data to provide specific, actionable
         typingText = null;
       } else {
         // Validate typing exercise content
+        const originalText = typingText;
         typingText = this.validateTypingExerciseContent(typingText);
+        console.log('🔍 DEBUG: Validated typing text:', {
+          original: originalText,
+          validated: typingText,
+          changed: originalText !== typingText
+        });
       }
     }
 
-    return {
+    const result = {
       intent: intent,
       'typing-text': typingText,
       response: parsed.response
     };
+
+    console.log('🔍 DEBUG: Managed typing text result:', {
+      intent: result.intent,
+      finalTypingText: result['typing-text'],
+      hasTypingText: !!result['typing-text']
+    });
+
+    return result;
   }
 
   /**

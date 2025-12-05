@@ -54,7 +54,8 @@ The AI service provides three main functions:
 
 RESTful API endpoint for AI functionality:
 - `POST /api/ai` with action-based routing
-- Supports `generateExercise`, `analyzePerformance`, and `chat` actions
+- Primary action: `chatWithUserEnhanced` (recommended for all new implementations)
+- Legacy actions: `generateExercise`, `analyzePerformance`, `chat` (deprecated but maintained for compatibility)
 - Proper error handling and response formatting
 
 ## Testing

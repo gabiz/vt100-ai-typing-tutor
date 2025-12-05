@@ -18,6 +18,7 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
   isActive
 }) => {
   const [typingEngine] = useState(() => new TypingEngine(exercise.text));
+  const [displayKey, setDisplayKey] = useState(0); // Force re-render when needed
 
   const [lastInputWasIncorrect, setLastInputWasIncorrect] = useState(false);
   const [flashIncorrect, setFlashIncorrect] = useState(false);
@@ -26,8 +27,22 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
 
   // Update engine when exercise changes
   useEffect(() => {
+    console.log('🔍 DEBUG: TypingArea exercise changed:', {
+      exerciseId: exercise.id,
+      textPreview: exercise.text.substring(0, 50) + '...',
+      textLength: exercise.text.length
+    });
     typingEngine.setText(exercise.text);
-  }, [exercise.text, typingEngine]);
+    
+    // Use setTimeout to avoid synchronous setState in effect
+    const timeoutId = setTimeout(() => {
+      setDisplayKey(prev => prev + 1); // Force re-render
+    }, 0);
+    
+    console.log('🔍 DEBUG: TypingEngine text updated, display key will be incremented');
+    
+    return () => clearTimeout(timeoutId);
+  }, [exercise.id, exercise.text, typingEngine]);
 
   // Start/stop engine based on isActive prop
   useEffect(() => {
@@ -41,7 +56,7 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
   // Derive display text from engine state
   const currentDisplayText = useMemo(() => {
     return typingEngine.getDisplayText();
-  }, [typingEngine]);
+  }, [typingEngine, displayKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle keyboard input
   const handleKeyPress = useCallback((event: KeyboardEvent) => {
@@ -62,6 +77,9 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
       
       const result = typingEngine.processCharacter(event.key);
       
+      // Force re-render after character processing
+      setDisplayKey(prev => prev + 1);
+      
       // Display will update automatically via useMemo
       
       // Handle visual feedback for incorrect characters
@@ -78,8 +96,15 @@ export const TypingArea: React.FC<TypingAreaProps> = ({
       // Play audio feedback (Requirement 2.4)
       audioService.current.playTypingSound(result.isCorrect);
       
-      // Report progress to parent
-      onProgress(typingEngine.getProgress());
+      // Report progress to parent (including keyErrorMap for session analysis)
+      const progress = typingEngine.getProgress();
+      const metrics = typingEngine.getMetrics();
+      
+      // Combine progress with keyErrorMap for session tracking
+      onProgress({
+        ...progress,
+        keyErrorMap: metrics.keyErrorMap
+      });
       
       // Auto-stop when complete
       if (result.isComplete) {

@@ -19,7 +19,7 @@ import {
   PerformanceMetrics
 } from '@/lib/types';
 import { StorageServiceImpl } from '@/lib/storage-service';
-import { TypingEngine } from '@/lib/typing-engine';
+// TypingEngine is managed by TypingArea component
 
 export default function Home() {
   // Default exercise for initial state
@@ -88,15 +88,11 @@ export default function Home() {
     loadHistory();
   }, [storageService]);
 
+  // Monitor currentExercise changes for debugging if needed
 
 
-  // Create typing engine when exercise changes
-  const typingEngine = useMemo(() => {
-    if (currentExercise) {
-      return new TypingEngine(currentExercise.text);
-    }
-    return new TypingEngine(defaultExercise.text);
-  }, [currentExercise, defaultExercise.text]);
+
+  // Typing engine is managed by TypingArea component
 
   // Session lifecycle management
   const startSession = useCallback(() => {
@@ -142,12 +138,12 @@ export default function Home() {
         timeElapsed: 0
       });
 
-      typingEngine.reset();
+      // Typing engine reset is handled by TypingArea component when isActive changes
     } catch (error) {
       console.error('Failed to start session:', error);
       setError('Failed to start typing session. Please try again.');
     }
-  }, [currentExercise, typingEngine]);
+  }, [currentExercise]);
 
   const stopSession = useCallback(() => {
     setIsTypingActive(false);
@@ -170,8 +166,8 @@ export default function Home() {
       timeElapsed: 0
     });
 
-    typingEngine.reset();
-  }, [typingEngine]);
+    // Typing engine reset is handled by TypingArea component
+  }, []);
 
   const completeSession = useCallback(async () => {
     if (!currentSession || !currentExercise) {
@@ -197,8 +193,13 @@ export default function Home() {
       const updatedHistory = storageService.getSessionHistory();
       setPerformanceHistory(updatedHistory);
       
-      // Collect detailed errors from typing engine
-      const detailedErrors = typingEngine.getDetailedErrors();
+      // Use the keyErrorMap from session metrics (already collected by TypingArea)
+      const detailedErrors: Array<{
+        position: number;
+        expected: string;
+        typed: string;
+        timestamp: number;
+      }> = []; // Detailed errors not needed - keyErrorMap has the key data
       
       // Save final metrics before resetting session
       setFinalSessionMetrics({
@@ -265,7 +266,7 @@ export default function Home() {
       setIsPaused(false);
       setTerminalStatus('READY');
     }
-  }, [currentSession, currentExercise, typingProgress.timeElapsed, storageService, typingEngine]);
+  }, [currentSession, currentExercise, typingProgress.timeElapsed, storageService]);
 
   // Handle typing progress updates
   const handleTypingProgress = useCallback((progress: TypingProgress) => {
@@ -281,7 +282,8 @@ export default function Home() {
         currentPosition: Math.max(0, progress.currentPosition || 0),
         correctChars: Math.max(0, progress.correctChars || 0),
         incorrectChars: Math.max(0, progress.incorrectChars || 0),
-        timeElapsed: Math.max(0, progress.timeElapsed || 0)
+        timeElapsed: Math.max(0, progress.timeElapsed || 0),
+        keyErrorMap: progress.keyErrorMap || {}
       };
 
       setTypingProgress(validatedProgress);
@@ -311,7 +313,7 @@ export default function Home() {
         metrics: {
           ...currentSession.metrics,
           ...validatedMetrics,
-          keyErrorMap: currentSession.metrics.keyErrorMap || {}
+          keyErrorMap: validatedProgress.keyErrorMap || currentSession.metrics.keyErrorMap || {}
         }
       };
 
@@ -329,12 +331,21 @@ export default function Home() {
 
   // Handle new exercise generation
   const handleExerciseGenerated = useCallback((exercise: TypingExercise) => {
+    console.log('🔍 DEBUG: handleExerciseGenerated called with:', {
+      exerciseId: exercise?.id,
+      textLength: exercise?.text?.length,
+      textPreview: exercise?.text?.substring(0, 50) + '...',
+      generatedBy: exercise?.generatedBy
+    });
+    
     try {
       if (!exercise || !exercise.text || exercise.text.trim().length === 0) {
+        console.error('🔍 DEBUG: Invalid exercise received');
         setError('Generated exercise is invalid. Please try again.');
         return;
       }
       
+      console.log('🔍 DEBUG: Setting new exercise as current exercise');
       setCurrentExercise(exercise);
       resetSession();
       setError(null); // Clear any previous errors

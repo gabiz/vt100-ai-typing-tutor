@@ -208,6 +208,8 @@ export const AIChat = forwardRef<
   const handleStructuredResponse = async (structuredResponse: StructuredAIResponse, originalMessage: string) => {
     const { intent, 'typing-text': typingText, response } = structuredResponse;
     
+    // Process structured response
+    
     // Add AI response message
     const aiResponse: ChatMessage = {
       role: 'assistant',
@@ -233,6 +235,12 @@ export const AIChat = forwardRef<
             generatedBy: 'ai' as const,
             createdAt: new Date()
           };
+          
+          console.log('🔍 DEBUG: AIChat calling onExerciseGenerated with:', {
+            exerciseId: exercise.id,
+            textLength: exercise.text.length,
+            textPreview: exercise.text.substring(0, 50) + '...'
+          });
           
           onExerciseGenerated(exercise);
         }
