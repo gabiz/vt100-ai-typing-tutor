@@ -28,21 +28,26 @@ export class AIServiceImpl {
         return this.generateKeyDrill(focusKeys, difficulty);
       }
       
-      // Extract requested word count from prompt (default to 40)
+      // Extract requested word count from prompt with enhanced validation
       const requestedWordCount = this.extractWordCount(prompt);
-      const targetWords = requestedWordCount || 40;
+      const targetWords = requestedWordCount || this.getDefaultWordCount();
 
       const systemPrompt = `You are a typing exercise generator. Generate ONLY the text content that users should type for practice.
 
-      CRITICAL RULES - FOLLOW EXACTLY OR FAIL:
+      CRITICAL WORD COUNT REQUIREMENTS - ABSOLUTE PRECISION REQUIRED:
+      - Generate EXACTLY ${targetWords} words - this is MANDATORY and NON-NEGOTIABLE
+      - Count every single word as you write: 1, 2, 3... up to ${targetWords} then STOP IMMEDIATELY
+      - NEVER generate ${targetWords + 1} or ${targetWords - 1} words - EXACTLY ${targetWords} words
+      - Word count precision is the PRIMARY requirement - everything else is secondary
+      - If user requested specific count, it MUST be followed with absolute precision
+      - Validate your word count before responding - count each word individually
+      
+      RESPONSE FORMAT RULES:
       - Respond with ONLY the typing exercise text, no explanations or instructions
       - Do NOT include phrases like "Here's your exercise" or "Practice typing this"
-      - WORD COUNT IS ABSOLUTELY CRITICAL: Generate EXACTLY ${targetWords} words, no more, no less
-      - Count every single word as you write - this is MANDATORY and NON-NEGOTIABLE
-      - If user requests specific word count, follow it PRECISELY - this is the most important rule
-      - Default is 40 words if no specific count requested
-      - STOP writing IMMEDIATELY when you reach exactly ${targetWords} words
-      - Do NOT write ${targetWords + 1} words or ${targetWords - 1} words - EXACTLY ${targetWords}
+      - No introductory or concluding remarks - ONLY the exercise text
+      
+      CHARACTER AND CONTENT RULES:
       - ONLY use standard keyboard characters: letters (a-z, A-Z), numbers (0-9), and basic punctuation
       - NEVER use special symbols like °, ©, ®, €, £, ™, or any Unicode characters
       - Allowed punctuation: . , ! ? ; : " ' - ( ) / @ # $ % & *
@@ -50,12 +55,19 @@ export class AIServiceImpl {
       - If focusKeys are specified, use those letters HEAVILY - at least 50% of the text should contain focus keys
       - When focus keys are provided, create words and sentences that specifically practice those letters
       
-      REMINDER: The user has requested EXACTLY ${targetWords} words. This is not a suggestion - it is a requirement.
+      WORD COUNT VALIDATION PROCESS:
+      1. Write your text
+      2. Count the words by splitting on spaces: word1 word2 word3...
+      3. Verify the count equals EXACTLY ${targetWords}
+      4. If not exactly ${targetWords}, adjust immediately
+      5. Double-check before responding
+      
+      TARGET: EXACTLY ${targetWords} WORDS (${requestedWordCount ? 'USER REQUESTED' : 'DEFAULT RANGE'})
       
       Difficulty levels:
-      - beginner: Simple words, basic punctuation (. , ! ?), EXACTLY ~${targetWords} words
-      - intermediate: Mixed case, common punctuation (; : " ' -), EXACTLY ~${targetWords} words  
-      - advanced: Complex vocabulary, keyboard symbols (@ # $ % & *), technical terms, EXACTLY ~${targetWords} words`
+      - beginner: Simple words, basic punctuation (. , ! ?), EXACTLY ${targetWords} words
+      - intermediate: Mixed case, common punctuation (; : " ' -), EXACTLY ${targetWords} words  
+      - advanced: Complex vocabulary, keyboard symbols (@ # $ % & *), technical terms, EXACTLY ${targetWords} words`
 
       const userPrompt = focusKeys 
         ? `MANDATORY WORD COUNT: ${targetWords} words EXACTLY. FOCUS KEYS: ${focusKeys.join(', ')} - use these letters HEAVILY throughout the text. Create ${difficulty} typing text with many words containing ${focusKeys.join(', ')}. Examples: ${focusKeys.includes('e') ? 'exercise, element, energy' : ''} ${focusKeys.includes('n') ? 'nature, number, engine' : ''}. Theme: ${prompt}. CRITICAL: EXACTLY ${targetWords} words and HEAVY use of focus keys.`
@@ -78,17 +90,17 @@ export class AIServiceImpl {
         return this.getFallbackExercise(difficulty, focusKeys);
       }
 
-      // Validate word count (should be exact or very close)
-      const wordCount = text.trim().split(/\s+/).length;
-      const minWords = Math.max(5, targetWords - 3);
-      const maxWords = targetWords + 3;
+      // Enhanced word count validation using new validation method
+      const validation = this.validateWordCount(text, requestedWordCount);
       
-      if (wordCount < minWords || wordCount > maxWords) {
-        console.warn(`Generated text has ${wordCount} words, expected exactly ${targetWords} words`);
-        // For significant deviations, use fallback
-        if (wordCount < targetWords - 10 || wordCount > targetWords + 10) {
-          console.warn('Word count too far off, using fallback exercise');
-          return this.getFallbackExercise(difficulty, focusKeys);
+      if (!validation.isValid) {
+        console.warn(validation.message);
+        
+        // For significant deviations (more than 20% off), use fallback
+        const deviationPercentage = Math.abs(validation.actualCount - targetWords) / targetWords;
+        if (deviationPercentage > 0.2) {
+          console.warn(`Word count deviation too high (${Math.round(deviationPercentage * 100)}%), using fallback exercise`);
+          return this.getFallbackExercise(difficulty, focusKeys, targetWords);
         }
       }
 
@@ -272,7 +284,7 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   ): StructuredAIResponse {
     switch (response.intent) {
       case 'chitchat':
-        return this.handleChitchatResponse(response, originalMessage);
+        return this.handleChitchatResponse(response);
       
       case 'session-analysis':
         return this.handleSessionAnalysisResponse(response, context, lastSessionErrors);
@@ -294,7 +306,7 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
    * Handles chitchat intent responses with typing focus redirection
    * Implements requirement 1.3 for chitchat response handling
    */
-  private handleChitchatResponse(response: StructuredAIResponse, _originalMessage: string): StructuredAIResponse {
+  private handleChitchatResponse(response: StructuredAIResponse): StructuredAIResponse {
     // Ensure typing-text is null for chitchat
     const enhancedResponse: StructuredAIResponse = {
       intent: 'chitchat',
@@ -366,8 +378,8 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
   private handleSessionSuggestResponse(response: StructuredAIResponse, originalMessage: string): StructuredAIResponse {
     // Validate that typing-text is provided for session-suggest
     if (!response['typing-text']) {
-      // Generate fallback typing text if missing
-      const wordCount = this.extractWordCount(originalMessage) || 35;
+      // Generate fallback typing text if missing using enhanced extraction
+      const wordCount = this.extractWordCount(originalMessage) || this.getDefaultWordCount();
       const fallbackText = this.generateFallbackTypingText(wordCount, originalMessage);
       
       return {
@@ -377,15 +389,14 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
       };
     }
 
-    // Validate word count if specified in original message
+    // Enhanced word count validation using new validation method
     const requestedWordCount = this.extractWordCount(originalMessage);
-    if (requestedWordCount) {
-      const actualWordCount = response['typing-text'].trim().split(/\s+/).length;
-      const tolerance = Math.max(2, Math.floor(requestedWordCount * 0.1)); // 10% tolerance, minimum 2 words
+    if (requestedWordCount && response['typing-text']) {
+      const validation = this.validateWordCount(response['typing-text'], requestedWordCount);
       
-      if (Math.abs(actualWordCount - requestedWordCount) > tolerance) {
-        console.warn(`Word count mismatch: requested ${requestedWordCount}, got ${actualWordCount}`);
-        // Generate corrected typing text
+      if (!validation.isValid) {
+        console.warn(validation.message);
+        // Generate corrected typing text using enhanced fallback
         const correctedText = this.generateFallbackTypingText(requestedWordCount, originalMessage);
         return {
           intent: 'session-suggest',
@@ -567,26 +578,209 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     ) || message.length < 50 // Allow short messages
   }
 
+  /**
+   * Enhanced word count extraction and validation
+   * Implements requirements 2.1, 2.2, 2.3, 2.4 for precise word count generation
+   * 
+   * @param prompt User's request message
+   * @returns Extracted word count or null if no specific count requested
+   */
   private extractWordCount(prompt: string): number | null {
-    // Look for patterns like "20 words", "30-word", "short exercise", etc.
-    const wordCountMatch = prompt.match(/(\d+)\s*(?:words?|word)/i);
-    if (wordCountMatch) {
-      const count = parseInt(wordCountMatch[1]);
-      // Reasonable limits: 5-200 words
-      if (count >= 5 && count <= 200) {
-        return count;
+    // Enhanced patterns for word count extraction
+    // Look for explicit numeric patterns: "20 words", "30-word", "give me 15 words", etc.
+    const explicitWordCountPatterns = [
+      /(\d+)\s*(?:words?|word)\b/i,                    // "20 words", "30 word"
+      /(\d+)[-\s]*word\b/i,                            // "30-word", "20 word"
+      /(?:give me|generate|create|make)\s+(\d+)\s*(?:words?|word)/i, // "give me 25 words"
+      /(?:exactly|precisely|just)\s+(\d+)\s*(?:words?|word)/i,       // "exactly 40 words"
+      /(\d+)\s*(?:words?|word)\s*(?:exactly|precisely|only)/i,       // "30 words exactly"
+      /(?:about|around|roughly)\s+(\d+)\s*(?:words?|word)/i,         // "about 50 words"
+      /(\d+)\s*(?:words?|word)\s*(?:long|length)/i,                  // "40 words long"
+      /(?:length|size)\s*(?:of\s*)?(\d+)\s*(?:words?|word)/i,        // "length of 35 words"
+    ];
+
+    // Try each pattern to find word count
+    for (const pattern of explicitWordCountPatterns) {
+      const match = prompt.match(pattern);
+      if (match) {
+        const count = parseInt(match[1]);
+        // Validate reasonable limits: 5-200 words per requirements
+        if (count >= 5 && count <= 200) {
+          return count;
+        } else if (count > 200) {
+          // Cap at maximum reasonable length
+          return 200;
+        } else if (count < 5) {
+          // Set minimum reasonable length
+          return 5;
+        }
       }
     }
 
-    // Look for qualitative length requests
-    if (/short|quick|brief|small/i.test(prompt)) {
-      return 30; // Short exercise
+    // Enhanced qualitative length detection with more patterns
+    const qualitativePatterns = {
+      // Short exercise patterns (25-35 words)
+      short: [
+        /\b(?:short|quick|brief|small|tiny|mini|concise)\b/i,
+        /\b(?:just a (?:few|little)|not (?:too )?(?:long|much))\b/i,
+        /\b(?:simple|easy|basic|minimal)\b.*\b(?:exercise|text|practice)\b/i,
+      ],
+      // Medium exercise patterns (30-40 words - default range)
+      medium: [
+        /\b(?:medium|normal|standard|regular|typical|average)\b/i,
+        /\b(?:moderate|middle|mid-sized)\b/i,
+      ],
+      // Long exercise patterns (60-80 words)
+      long: [
+        /\b(?:long|extended|lengthy|large|big|substantial)\b/i,
+        /\b(?:comprehensive|detailed|thorough|extensive)\b/i,
+        /\b(?:challenge|challenging|advanced)\b.*\b(?:exercise|text|practice)\b/i,
+      ],
+      // Very short patterns (15-25 words)
+      veryShort: [
+        /\b(?:very (?:short|quick|brief)|extremely (?:short|brief))\b/i,
+        /\b(?:super (?:short|quick)|ultra (?:short|brief))\b/i,
+        /\b(?:micro|nano|tiny)\b.*\b(?:exercise|text|practice)\b/i,
+      ],
+      // Very long patterns (90-120 words)
+      veryLong: [
+        /\b(?:very (?:long|extended)|extremely (?:long|lengthy))\b/i,
+        /\b(?:super (?:long|extended)|ultra (?:long|lengthy))\b/i,
+        /\b(?:massive|huge|enormous)\b.*\b(?:exercise|text|practice)\b/i,
+      ]
+    };
+
+    // Check qualitative patterns in order of specificity
+    for (const pattern of qualitativePatterns.veryShort) {
+      if (pattern.test(prompt)) return 20; // Very short: 20 words
     }
-    if (/long|extended|lengthy/i.test(prompt)) {
-      return 90; // Long exercise
+    
+    for (const pattern of qualitativePatterns.short) {
+      if (pattern.test(prompt)) return 30; // Short: 30 words
+    }
+    
+    for (const pattern of qualitativePatterns.veryLong) {
+      if (pattern.test(prompt)) return 100; // Very long: 100 words
+    }
+    
+    for (const pattern of qualitativePatterns.long) {
+      if (pattern.test(prompt)) return 70; // Long: 70 words
+    }
+    
+    for (const pattern of qualitativePatterns.medium) {
+      if (pattern.test(prompt)) return 35; // Medium: 35 words (within 30-40 range)
     }
 
-    return null; // Use default (60 words)
+    // No specific word count found - return null for default fallback
+    return null;
+  }
+
+  /**
+   * Validates generated word count against requested count
+   * Implements requirements 2.1, 2.2 for exact word count validation
+   * 
+   * @param generatedText The AI-generated text
+   * @param requestedCount The requested word count (null if no specific request)
+   * @returns Validation result with actual count and whether it meets requirements
+   */
+  private validateWordCount(generatedText: string, requestedCount: number | null): {
+    actualCount: number;
+    isValid: boolean;
+    tolerance: number;
+    message?: string;
+  } {
+    const actualCount = generatedText.trim().split(/\s+/).filter(word => word.length > 0).length;
+    
+    if (requestedCount === null) {
+      // No specific count requested - check if within default range (30-40 words)
+      const isInDefaultRange = actualCount >= 30 && actualCount <= 40;
+      return {
+        actualCount,
+        isValid: isInDefaultRange,
+        tolerance: 0,
+        message: isInDefaultRange ? undefined : `Generated ${actualCount} words, expected 30-40 words for default range`
+      };
+    }
+
+    // Specific count requested - validate precision per requirements 2.1, 2.2
+    const tolerance = Math.max(1, Math.floor(requestedCount * 0.05)); // 5% tolerance, minimum 1 word
+    const difference = Math.abs(actualCount - requestedCount);
+    const isValid = difference <= tolerance;
+
+    return {
+      actualCount,
+      isValid,
+      tolerance,
+      message: isValid ? undefined : `Generated ${actualCount} words, requested exactly ${requestedCount} words (tolerance: ±${tolerance})`
+    };
+  }
+
+  /**
+   * Generates fallback word count when no specific count is requested
+   * Implements requirements 2.3, 2.4 for 30-40 word range fallback
+   * 
+   * @returns Random word count within the 30-40 word range
+   */
+  private getDefaultWordCount(): number {
+    // Generate random count within 30-40 word range per requirements 2.3, 2.4
+    return Math.floor(Math.random() * 11) + 30; // Random between 30-40 inclusive
+  }
+
+  /**
+   * Adjusts text to match target word count
+   * Implements requirements 2.1, 2.2 for exact word count generation
+   * 
+   * @param text Original text to adjust
+   * @param targetWordCount Target number of words
+   * @returns Adjusted text with target word count
+   */
+  private adjustTextToWordCount(text: string, targetWordCount: number): string {
+    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+    const currentCount = words.length;
+
+    if (currentCount === targetWordCount) {
+      return text; // Already correct length
+    }
+
+    if (currentCount > targetWordCount) {
+      // Truncate to target word count
+      return words.slice(0, targetWordCount).join(' ');
+    }
+
+    // Need to extend text to reach target word count
+    const wordsNeeded = targetWordCount - currentCount;
+    const extensionPhrases = [
+      'Keep practicing to improve your typing skills.',
+      'Focus on accuracy before speed.',
+      'Maintain proper finger positioning.',
+      'Practice makes perfect.',
+      'Build muscle memory through repetition.',
+      'Stay focused and type steadily.',
+      'Remember to keep your wrists straight.',
+      'Take breaks when needed.',
+      'Consistency is key to improvement.',
+      'Type with confidence and precision.'
+    ];
+
+    let extendedText = text;
+    let wordsAdded = 0;
+
+    // Add extension phrases until we reach the target
+    while (wordsAdded < wordsNeeded) {
+      const phrase = extensionPhrases[wordsAdded % extensionPhrases.length];
+      const phraseWords = phrase.split(/\s+/);
+      const wordsToAdd = Math.min(phraseWords.length, wordsNeeded - wordsAdded);
+      
+      if (wordsToAdd === phraseWords.length) {
+        extendedText += ' ' + phrase;
+      } else {
+        extendedText += ' ' + phraseWords.slice(0, wordsToAdd).join(' ');
+      }
+      
+      wordsAdded += wordsToAdd;
+    }
+
+    return extendedText;
   }
 
   private generateKeyDrill(focusKeys: string[], difficulty: string): TypingExercise {
@@ -972,7 +1166,7 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     return cleanedText;
   }
 
-  private getFallbackExercise(difficulty: string, focusKeys?: string[]): TypingExercise {
+  private getFallbackExercise(difficulty: string, focusKeys?: string[], targetWordCount?: number): TypingExercise {
     const exercises = {
       beginner: 'The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet. Practice typing slowly and focus on accuracy first. Speed will come naturally with practice. Keep your fingers on the home row keys.',
       intermediate: 'Practice makes perfect! Keep typing to improve your speed and accuracy. Remember to maintain proper finger positioning on the home row keys. Take breaks when needed, but try to maintain a steady rhythm throughout your typing session.',
@@ -985,6 +1179,11 @@ CRITICAL: Always return valid JSON. Do not include any text outside the JSON str
     if (focusKeys && focusKeys.length > 0) {
       const keyString = focusKeys.join(' ')
       text = `Practice these specific keys: ${keyString}. Focus on building muscle memory for ${keyString} combinations. Repeat these patterns: ${keyString.repeat(2)}. Remember to keep your fingers positioned correctly and maintain steady rhythm while typing ${keyString} sequences.`
+    }
+
+    // Adjust text to target word count if specified
+    if (targetWordCount) {
+      text = this.adjustTextToWordCount(text, targetWordCount);
     }
 
     return {
